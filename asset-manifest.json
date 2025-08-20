@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/Liberary/static/css/main.3bea0484.css",
+    "main.js": "/Liberary/static/js/main.7568c9e1.js",
+    "static/js/453.f5b655c6.chunk.js": "/Liberary/static/js/453.f5b655c6.chunk.js",
+    "index.html": "/Liberary/index.html",
+    "main.3bea0484.css.map": "/Liberary/static/css/main.3bea0484.css.map",
+    "main.7568c9e1.js.map": "/Liberary/static/js/main.7568c9e1.js.map",
+    "453.f5b655c6.chunk.js.map": "/Liberary/static/js/453.f5b655c6.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.3bea0484.css",
+    "static/js/main.7568c9e1.js"
+  ]
+}

@@ -136,10 +136,16 @@ const App = () => {
         const nextNumericId = (maxIdData || 0) + 1;
         const student_id = `S${nextNumericId.toString().padStart(3, '0')}`;
         const fee_amount = feeStructure[studentData.admissionType];
+        
+        const admissionDate = new Date(studentData.admissionDate);
+        const nextDueDate = new Date(admissionDate.setMonth(admissionDate.getMonth() + 1));
+
         const newStudent = {
             user_id: session.user.id, student_id, title: studentData.title, name: studentData.name, mobile: studentData.mobile,
             admission_type: studentData.admissionType, seat_number: studentData.seatNumber, photo_url,
-            admission_date: studentData.admissionDate, next_due_date: studentData.admissionDate, fee_amount,
+            admission_date: studentData.admissionDate, 
+            next_due_date: studentData.admissionDate, // Set to admission date so it's due immediately
+            fee_amount,
         };
         const { error: insertError } = await supabase.from('students').insert(newStudent);
         if (insertError) throw new Error(`Could not save student: ${insertError.message}`);
@@ -179,6 +185,25 @@ const App = () => {
         await fetchStudents();
         handleCloseModal();
         alert('Payment confirmed!');
+    });
+    
+    // NEW: Function to manually mark a student's fee as due
+    const handleMarkAsDue = (studentId) => runAction(async () => {
+        const student = students.find(s => s.id === studentId);
+        if (!student) throw new Error("Student not found.");
+
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        const { error } = await supabase
+            .from('students')
+            .update({ next_due_date: yesterday.toISOString().split('T')[0] })
+            .eq('id', studentId);
+
+        if (error) throw error;
+        
+        await fetchStudents();
+        alert(`${student.name}'s fee has been marked as Due.`);
     });
     
     const handleStudentDeparture = (studentDBId, transferTargetDBId) => runAction(async () => {
@@ -232,7 +257,7 @@ const App = () => {
             case 'dashboard': return <DashboardView stats={dashboardStats} activeStudents={activeStudents} onSearch={handleDashboardSearch} profile={dashboardProfile} onCardClick={handleStatCardClick} />;
             case 'seats': return <SeatMatrix seats={seats} onSeatClick={(seat) => handleOpenModal('addStudent', { seatNumber: seat.number, gender: seat.gender })} onViewStudent={(id) => { setActiveView('dashboard'); handleDashboardSearch(id); }} />;
             case 'students': return <StudentManagement students={activeStudents} onAddStudent={() => handleOpenModal('addStudent')} onDepart={(s) => handleOpenModal('departStudent', s)} onEdit={(s) => handleOpenModal('editStudent', s)} onDelete={(s) => handleOpenModal('deleteStudent', s)} onView={(id) => { setActiveView('dashboard'); handleDashboardSearch(id); }} />;
-            case 'fees': return <FeeManagement students={activeStudents} onOpenProfile={(s) => handleOpenModal('feeProfile', s)} />;
+            case 'fees': return <FeeManagement students={activeStudents} onOpenProfile={(s) => handleOpenModal('feeProfile', s)} onMarkAsDue={handleMarkAsDue} />;
             case 'departures': return <DeparturesView departedStudents={departedStudents} />;
             case 'bookSearch': return <BookSearchView />;
             case 'settings': return <SettingsView feeStructure={feeStructure} onUpdate={setFeeStructure} />;
@@ -300,10 +325,116 @@ const StudentProfileCard = ({ student }) => {
 };
 const SeatMatrix = ({ seats, onSeatClick, onViewStudent }) => ( <div className="bg-white p-6 rounded-lg shadow-md"><h3 className="text-2xl font-semibold text-gray-800 mb-4">Seat Matrix</h3><div className="flex items-center space-x-4 mb-6"><div className="flex items-center"><div className="w-4 h-4 bg-pink-200 border border-pink-400 rounded-sm mr-2"></div><span>Girls' Seats</span></div><div className="flex items-center"><div className="w-4 h-4 bg-blue-200 border border-blue-400 rounded-sm mr-2"></div><span>Boys' Seats</span></div><div className="flex items-center"><div className="w-4 h-4 bg-gray-400 border border-gray-600 rounded-sm mr-2"></div><span>Occupied</span></div></div><div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">{seats.map(seat => { const isOccupied = !!seat.occupiedBy; const bgColor = isOccupied ? 'bg-gray-400' : (seat.gender === 'girl' ? 'bg-pink-200' : 'bg-blue-200'); const borderColor = isOccupied ? 'border-gray-600' : (seat.gender === 'girl' ? 'border-pink-400' : 'border-blue-400'); const textColor = isOccupied ? 'text-white' : 'text-gray-700'; const hoverEffect = !isOccupied ? 'hover:bg-green-300 hover:border-green-500' : 'hover:scale-105'; return (<div key={seat.number} className={`relative group w-full aspect-square flex flex-col items-center justify-center border rounded-md cursor-pointer ${bgColor} ${borderColor} ${textColor} transition-all duration-200 ${hoverEffect}`} onClick={() => isOccupied ? onViewStudent(seat.occupiedBy) : onSeatClick(seat)}><span className="font-bold text-lg">{seat.number}</span>{isOccupied && <User size={16} className="mt-1" />}</div>); })}</div></div> );
 const StudentManagement = ({ students, onAddStudent, onView, onEdit, onDelete, onDepart }) => ( <div className="bg-white p-6 rounded-lg shadow-md"><div className="flex justify-between items-center mb-4"><h3 className="text-2xl font-semibold text-gray-800">Active Students</h3><button onClick={onAddStudent} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"><Plus size={20} className="mr-2" /> Add Student</button></div><div className="overflow-x-auto"><table className="w-full text-left"><thead><tr className="bg-gray-100"><th className="p-3">ID</th><th className="p-3">Name</th><th className="p-3">Mobile</th><th className="p-3">Actions</th></tr></thead><tbody>{students.map(s => ( <tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{s.student_id}</td><td className="p-3 font-medium">{s.title} {s.name}</td><td className="p-3">{s.mobile}</td><td className="p-3"><div className="flex gap-2"><button onClick={() => onView(s.student_id)} className="p-2 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200"><Eye size={16}/></button><button onClick={() => onEdit(s)} className="p-2 rounded-md bg-yellow-100 text-yellow-600 hover:bg-yellow-200"><Edit size={16}/></button><button onClick={() => onDelete(s)} className="p-2 rounded-md bg-red-100 text-red-600 hover:bg-red-200"><Trash2 size={16}/></button><button onClick={() => onDepart(s)} className="p-2 rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200"><LogOut size={16}/></button></div></td></tr> ))}</tbody></table></div></div> );
-const FeeManagement = ({ students, onOpenProfile }) => ( <div className="bg-white p-6 rounded-lg shadow-md"><h3 className="text-2xl font-semibold text-gray-800 mb-4">Fee Status</h3><div className="overflow-x-auto"><table className="w-full text-left"><thead><tr className="bg-gray-100"><th className="p-3">Name</th><th className="p-3">Fee Status</th><th className="p-3">Next Due Date</th><th className="p-3">Action</th></tr></thead><tbody>{students.map(s => { const isDue = new Date(s.next_due_date) < getTodayDate(); return ( <tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3 font-medium">{s.name}</td><td className="p-3"><span className={`px-3 py-1 rounded-full text-sm font-semibold ${isDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{isDue ? 'Due' : 'Paid'}</span></td><td className="p-3">{s.next_due_date}</td><td className="p-3"><button onClick={() => onOpenProfile(s)} className="bg-blue-500 text-white px-3 py-1 text-sm rounded-md hover:bg-blue-600">View Profile</button></td></tr> ); })}</tbody></table></div></div> );
-const SettingsView = ({ feeStructure, onUpdate }) => { /* ... No changes needed here ... */ return <div>Settings</div> };
+
+// MODIFIED: FeeManagement now includes the onMarkAsDue prop and button
+const FeeManagement = ({ students, onOpenProfile, onMarkAsDue }) => (
+    <div className="bg-white p-6 rounded-lg shadow-md">
+        <h3 className="text-2xl font-semibold text-gray-800 mb-4">Fee Status</h3>
+        <div className="overflow-x-auto">
+            <table className="w-full text-left">
+                <thead>
+                    <tr className="bg-gray-100">
+                        <th className="p-3">Name</th>
+                        <th className="p-3">Fee Status</th>
+                        <th className="p-3">Next Due Date</th>
+                        <th className="p-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {students.map(s => {
+                        const isDue = new Date(s.next_due_date) < getTodayDate();
+                        return (
+                            <tr key={s.id} className="border-b hover:bg-gray-50">
+                                <td className="p-3 font-medium">{s.name}</td>
+                                <td className="p-3">
+                                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${isDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                                        {isDue ? 'Due' : 'Paid'}
+                                    </span>
+                                </td>
+                                <td className="p-3">{s.next_due_date}</td>
+                                <td className="p-3">
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => onOpenProfile(s)} className="bg-blue-500 text-white px-3 py-1 text-sm rounded-md hover:bg-blue-600">
+                                            View Profile
+                                        </button>
+                                        {!isDue && (
+                                            <button 
+                                                onClick={() => onMarkAsDue(s.id)} 
+                                                className="bg-yellow-500 text-white px-3 py-1 text-sm rounded-md hover:bg-yellow-600 flex items-center gap-1"
+                                                title="Mark fee as due immediately"
+                                            >
+                                                <AlertTriangle size={14} />
+                                                Mark as Due
+                                            </button>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    </div>
+);
 
 // --- NEW & IMPROVED COMPONENTS ---
+
+// NEW: Fully functional SettingsView component
+const SettingsView = ({ feeStructure, onUpdate }) => {
+    const [fees, setFees] = useState(feeStructure);
+    const [saved, setSaved] = useState(false);
+
+    const handleSave = () => {
+        onUpdate(fees);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000); // Hide message after 2 seconds
+    };
+
+    return (
+        <div className="bg-white p-6 rounded-lg shadow-md max-w-md mx-auto">
+            <h3 className="text-2xl font-semibold text-gray-800 mb-6">Fee Structure Settings</h3>
+            <div className="space-y-4">
+                <div>
+                    <label htmlFor="full-time-fee" className="block text-sm font-medium text-gray-700 mb-1">
+                        Full-time Fee ($)
+                    </label>
+                    <input
+                        type="number"
+                        id="full-time-fee"
+                        value={fees['Full-time']}
+                        onChange={e => setFees({ ...fees, 'Full-time': Number(e.target.value) })}
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                </div>
+                <div>
+                    <label htmlFor="half-time-fee" className="block text-sm font-medium text-gray-700 mb-1">
+                        Half-time Fee ($)
+                    </label>
+                    <input
+                        type="number"
+                        id="half-time-fee"
+                        value={fees['Half-time']}
+                        onChange={e => setFees({ ...fees, 'Half-time': Number(e.target.value) })}
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                </div>
+            </div>
+            <button
+                onClick={handleSave}
+                className="w-full mt-6 bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 transition duration-200 font-semibold flex items-center justify-center"
+            >
+                {saved ? (
+                    <>
+                        <CheckCircle size={20} className="mr-2" /> Saved!
+                    </>
+                ) : (
+                    'Save Changes'
+                )}
+            </button>
+        </div>
+    );
+};
 
 const DeparturesView = ({ departedStudents }) => (
     <div className="bg-white p-6 rounded-lg shadow-md">

@@ -4,7 +4,6 @@ import {
     Phone, Image as ImageIcon, Settings, LogOut, CheckCircle, Edit, Trash2, Eye, History, BookMarked, Loader2, Printer, UploadCloud, ArrowLeft, XCircle, Mail, Lock, Download, FilterX, Sun, Moon, MessageSquare, UserX, UserCheck
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-// import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 import { createClient } from '@supabase/supabase-js';
 
 // --- SUPABASE CLIENT SETUP ---
@@ -19,29 +18,166 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 
-// --- AUTHENTICATION COMPONENT ---
+// --- OTP VERIFICATION COMPONENT (NEW) ---
+const OtpVerification = ({ user }) => {
+    const [otp, setOtp] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleVerifyOtp = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+
+        if (!otp || otp.length < 6) {
+            setError('Please enter a valid 6-digit OTP.');
+            setLoading(false);
+            return;
+        }
+
+        // 1. Check if OTP is correct for the user and is not used
+        const { data: codeData, error: codeError } = await supabase
+            .from('registration_codes')
+            .select('*')
+            .eq('code', otp)
+            .eq('claimed_by_user_id', user.id)
+            .eq('is_used', false)
+            .single();
+
+        if (codeError || !codeData) {
+            setError('Invalid or expired OTP. Please try again.');
+            setLoading(false);
+            return;
+        }
+
+        // 2. Mark OTP as used in the database
+        await supabase
+            .from('registration_codes')
+            .update({ is_used: true, claimed_at: new Date().toISOString() })
+            .eq('id', codeData.id);
+
+        // 3. Update user metadata to mark them as verified
+        await supabase.auth.updateUser({
+            data: { otp_verified: true }
+        });
+
+        // 4. Force a session refresh to get the new user metadata.
+        // This will trigger the App component to re-render and show the main app.
+        await supabase.auth.refreshSession();
+        setLoading(false);
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-200 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+            <div
+                className="absolute inset-0 bg-cover bg-center z-0 transition-transform duration-500 ease-in-out transform scale-105"
+                style={{
+                    backgroundImage: "url('https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2070&auto=format&fit=crop')",
+                }}
+            ></div>
+            <div className="absolute inset-0 bg-black opacity-40 z-10"></div>
+
+            <div className="w-full max-w-md z-20">
+                <div className="text-center mb-8 animate-fade-in-down" style={{ animationDuration: '1s' }}>
+                    <CheckCircle className="mx-auto h-16 w-auto text-white drop-shadow-lg" />
+                    <h2 className="mt-6 text-4xl font-extrabold text-white tracking-tight" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
+                        Verify Your Account
+                    </h2>
+                    <p className="mt-2 text-lg text-gray-300">A 6-digit verification code has been generated. Please check your database for the code.</p>
+                </div>
+
+                <div className="bg-white bg-opacity-10 backdrop-blur-xl p-8 rounded-2xl shadow-2xl animate-fade-in-up" style={{ animationDuration: '1s' }}>
+                    <form onSubmit={handleVerifyOtp} className="space-y-6">
+                        <div className="relative">
+                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" />
+                            <input
+                                className="w-full p-3 pl-10 bg-transparent border-b-2 border-gray-300 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-400 transition tracking-[1em] text-center"
+                                type="text"
+                                placeholder="______"
+                                maxLength="6"
+                                value={otp}
+                                required
+                                onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ''))}
+                            />
+                        </div>
+                        {error && <p className="text-yellow-300 text-sm text-center">{error}</p>}
+                        <div>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full flex justify-center items-center bg-indigo-600 text-white p-3 font-bold tracking-wider rounded-lg shadow-md hover:bg-indigo-700 transform hover:-translate-y-0.5 transition-all duration-150 disabled:opacity-70"
+                            >
+                                {loading && <Loader2 className="animate-spin mr-2 h-5 w-5" />}
+                                Verify & Continue
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+// --- AUTHENTICATION COMPONENT (MODIFIED) ---
 const Auth = () => {
     const [loading, setLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isSignUp, setIsSignUp] = useState(false);
 
+    const generateAndSaveOtp = async (user) => {
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const { error: otpError } = await supabase
+            .from('registration_codes')
+            .insert({
+                code: otp,
+                claimed_by_user_id: user.id,
+                is_used: false,
+            });
+
+        if (otpError) {
+            alert(`Could not generate registration code: ${otpError.message}. Please contact support.`);
+            return false;
+        }
+        return true;
+    };
+
     const handleLogin = async (e) => {
         e.preventDefault();
         setLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) alert(error.error_description || error.message);
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+        if (error) {
+            alert(error.error_description || error.message);
+        } else if (data.user && !data.user.user_metadata?.otp_verified) {
+             // If user exists but is not verified, generate an OTP for them.
+            await generateAndSaveOtp(data.user);
+            // The onAuthStateChange listener in App.js will handle showing the OTP screen.
+        }
         setLoading(false);
     };
 
     const handleSignUp = async (e) => {
         e.preventDefault();
         setLoading(true);
-        const { error } = await supabase.auth.signUp({ email, password });
+        
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    otp_verified: false // New users are not verified by default
+                }
+            }
+        });
+
         if (error) {
             alert(error.error_description || error.message);
-        } else {
-            alert('Check your email for the login link!');
+        } else if (data.user) {
+            await generateAndSaveOtp(data.user);
+            alert('Sign up successful! Please proceed to OTP verification.');
+            // The onAuthStateChange listener will now show the OTP screen.
         }
         setLoading(false);
     };
@@ -129,7 +265,7 @@ const initialState = {
 const getTodayDate = () => { const today = new Date(); today.setHours(0, 0, 0, 0); return today; };
 const debounce = (func, delay) => { let timeout; return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; };
 
-// --- MAIN APP COMPONENT ---
+// --- MAIN APP COMPONENT (MODIFIED) ---
 const App = () => {
     const [session, setSession] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -165,7 +301,7 @@ const App = () => {
         setLoading(true);
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
-            if (session?.user) {
+            if (session?.user && session.user.user_metadata?.otp_verified) {
                 Promise.all([fetchLibraryProfile(session.user), fetchStudents(session.user)]).finally(() => setLoading(false));
             } else {
                 setLoading(false);
@@ -175,10 +311,16 @@ const App = () => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
             setSession(newSession);
             if (newSession?.user) {
-                setLoading(true);
-                Promise.all([fetchLibraryProfile(newSession.user), fetchStudents(newSession.user)]).finally(() => setLoading(false));
+                // Check for OTP verification status in the user's metadata
+                if (!newSession.user.user_metadata?.otp_verified) {
+                    setLoading(false); // Stop loading to show OTP screen
+                } else {
+                    setLoading(true);
+                    Promise.all([fetchLibraryProfile(newSession.user), fetchStudents(newSession.user)]).finally(() => setLoading(false));
+                }
             } else {
                 setLibraryProfile(null);
+                setLoading(false);
             }
         });
         return () => subscription.unsubscribe();
@@ -435,6 +577,12 @@ const App = () => {
 
     if (loading) return <SplashScreen />;
     if (!session) return <Auth />;
+    
+    // NEW: If user is signed in but hasn't verified OTP, show the verification screen
+    if (session && !session.user.user_metadata?.otp_verified) {
+        return <OtpVerification user={session.user} />;
+    }
+
     if (session && !libraryProfile) {
         return <LibrarySetupForm onSave={saveLibraryProfile} isSubmitting={isSubmitting} onBack={handleSignOut} />;
     }
@@ -664,7 +812,7 @@ const StudentManagement = ({ students, onAddStudent, onView, onEdit, onDelete, o
                             </div>
                         </div>
                         <div className="bg-gray-50 p-3 border-t">
-                             <div className="flex justify-end gap-2 flex-wrap">
+                            <div className="flex justify-end gap-2 flex-wrap">
                                 <button onClick={() => onView(s.student_id)} className="p-2 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200" title="View Profile"><Eye size={16}/></button>
                                 {filter === 'active' && (
                                     <>
@@ -771,7 +919,7 @@ const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhat
                             />
                         </div>
                     </div>
-                     <div>
+                    <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Fee Status</label>
                         <select name="feeStatus" value={filters.feeStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white">
                             <option value="all">All Fee Status</option>

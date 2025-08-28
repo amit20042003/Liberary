@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     BookOpen, Users, DollarSign, AlertTriangle, Plus, X, Search, Armchair, User,
-    Phone, Image as ImageIcon, Settings, LogOut, CheckCircle, Edit, Trash2, Eye, History, BookMarked, Loader2, Printer, UploadCloud, ArrowLeft, XCircle, Mail, Lock, Download, FilterX, Sun, Moon, MessageSquare, UserX, UserCheck, KeyRound, EyeOff, TrendingUp, LifeBuoy, ShieldCheck, CalendarClock
+    Phone, Image as ImageIcon, Settings, LogOut, CheckCircle, Edit, Trash2, Eye, History, BookMarked, Loader2, Printer, UploadCloud, ArrowLeft, XCircle, Mail, Lock, Download, FilterX, Sun, Moon, MessageSquare, UserX, UserCheck, KeyRound, EyeOff, TrendingUp, LifeBuoy, ShieldCheck, CalendarClock, Menu
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { createClient } from '@supabase/supabase-js';
 
 // --- SUPABASE CLIENT SETUP ---
-// Ensure these variables are in your .env.local file
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
@@ -16,7 +15,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
 
 // --- OTP VERIFICATION COMPONENT ---
 const OtpVerification = ({ user }) => {
@@ -215,60 +213,19 @@ const UpdatePassword = () => {
 };
 
 
-// --- AUTHENTICATION COMPONENT ---
+// --- AUTHENTICATION COMPONENT (Simplified) ---
 const Auth = () => {
     const [loading, setLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [authView, setAuthView] = useState('signIn');
 
-    const generateAndSaveOtp = async (user) => {
-        const { data: existingCode, error: checkError } = await supabase
-            .from('registration_codes')
-            .select('id')
-            .eq('claimed_by_user_id', user.id)
-            .eq('is_used', false)
-            .maybeSingle();
-
-        if (checkError) {
-            console.error("Error checking for existing OTP:", checkError);
-            alert(`Error checking for existing OTP: ${checkError.message}.`);
-            return false;
-        }
-
-        if (existingCode) {
-            console.log("An active OTP already exists for this user.");
-            return true;
-        }
-
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const { error: otpError } = await supabase
-            .from('registration_codes')
-            .insert({
-                code: otp,
-                claimed_by_user_id: user.id,
-                user_email: user.email,
-                is_used: false,
-            });
-
-        if (otpError) {
-            console.error("Error saving OTP:", otpError);
-            alert(`You are already registered so please turn the login page:`);
-            return false;
-        }
-        return true;
-    };
-
-
     const handleLogin = async (e) => {
         e.preventDefault();
         setLoading(true);
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
             alert(error.error_description || error.message);
-        } else if (data.user && !data.user.user_metadata?.otp_verified) {
-            await generateAndSaveOtp(data.user);
         }
         setLoading(false);
     };
@@ -290,8 +247,8 @@ const Auth = () => {
         if (error) {
             alert(error.error_description || error.message);
         } else if (data.user) {
-            await generateAndSaveOtp(data.user);
-            alert('Sign up successful! Please proceed to OTP verification.');
+            // The database trigger now handles OTP creation automatically.
+            alert('Sign up successful! An OTP has been generated. Please proceed to verification.');
         }
         setLoading(false);
     };
@@ -310,7 +267,6 @@ const Auth = () => {
             setAuthView('signIn');
         }
     };
-
 
     const renderForm = () => {
         if (authView === 'forgotPassword') {
@@ -641,8 +597,8 @@ const App = () => {
     const [isIncomeVisible, setIsIncomeVisible] = useState(false);
     const [trialTimeLeft, setTrialTimeLeft] = useState(null);
     const [isTrialEndModalOpen, setIsTrialEndModalOpen] = useState(false);
-    const [subscriptionDaysLeft, setSubscriptionDaysLeft] = useState(null);
-
+    const [subscriptionStatus, setSubscriptionStatus] = useState({ daysLeft: null, expiresAt: null });
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const fetchLibraryProfile = useCallback(async (user) => {
         if (!user) return;
@@ -667,7 +623,7 @@ const App = () => {
         setSession(null);
         setLibraryProfile(null);
         setTrialTimeLeft(null);
-        setSubscriptionDaysLeft(null);
+        setSubscriptionStatus({ daysLeft: null, expiresAt: null });
     };
 
     useEffect(() => {
@@ -735,21 +691,21 @@ const App = () => {
     useEffect(() => {
         if (libraryProfile?.subscription_plan) {
             if (libraryProfile.subscription_plan === 'Lifetime') {
-                setSubscriptionDaysLeft('Lifetime');
+                setSubscriptionStatus({ daysLeft: 'Lifetime', expiresAt: null });
             } else if (libraryProfile.subscription_expires_at) {
-                const now = new Date().getTime();
-                const expiresAt = new Date(libraryProfile.subscription_expires_at).getTime();
-                const timeLeft = expiresAt - now;
+                const now = new Date();
+                const expiresAtDate = new Date(libraryProfile.subscription_expires_at);
+                const timeLeft = expiresAtDate.getTime() - now.getTime();
 
                 if (timeLeft > 0) {
                     const daysLeft = Math.ceil(timeLeft / (1000 * 60 * 60 * 24));
-                    setSubscriptionDaysLeft(daysLeft);
+                    setSubscriptionStatus({ daysLeft, expiresAt: expiresAtDate.toLocaleDateString() });
                 } else {
-                    setSubscriptionDaysLeft(0);
+                    setSubscriptionStatus({ daysLeft: 0, expiresAt: expiresAtDate.toLocaleDateString() });
                 }
             }
         } else {
-            setSubscriptionDaysLeft(null);
+            setSubscriptionStatus({ daysLeft: null, expiresAt: null });
         }
     }, [libraryProfile]);
 
@@ -925,6 +881,10 @@ const App = () => {
         setDashboardProfile(found || { notFound: true });
     };
 
+    const clearDashboardSearch = () => {
+        setDashboardProfile(null);
+    };
+
     const handleOpenModal = useCallback((type, item = null) => { setModalContent({ type, item }); setIsModalOpen(true); }, []);
     const handleCloseModal = () => { if (!isSubmitting) { setIsModalOpen(false); setModalContent({ type: '', item: null }); } };
 
@@ -974,7 +934,7 @@ const App = () => {
 
     const renderView = () => {
         switch (activeView) {
-            case 'dashboard': return <DashboardView stats={dashboardStats} activeStudents={activeStudents} onSearch={handleDashboardSearch} profile={dashboardProfile} onCardClick={(title, data) => handleOpenModal('listView', { title, data })} libraryName={libraryProfile?.library_name} totalIncome={totalIncome} isIncomeVisible={isIncomeVisible} setIsIncomeVisible={setIsIncomeVisible} onIncomeClick={() => handleOpenModal('incomePassword')} />;
+            case 'dashboard': return <DashboardView stats={dashboardStats} activeStudents={activeStudents} onSearch={handleDashboardSearch} profile={dashboardProfile} onClearSearch={clearDashboardSearch} onCardClick={(title, data) => handleOpenModal('listView', { title, data })} libraryName={libraryProfile?.library_name} totalIncome={totalIncome} isIncomeVisible={isIncomeVisible} setIsIncomeVisible={setIsIncomeVisible} onIncomeClick={() => handleOpenModal('incomePassword')} />;
             case 'seats': return <SeatMatrix seats={seats} activeStudents={activeStudents} onSeatClick={(seatInfo) => handleOpenModal('addStudent', { seatNumber: seatInfo.number, gender: seatInfo.gender, prefillShift: seatInfo.prefillShift })} onViewStudent={(studentId) => handleOpenModal('studentProfileDetail', students.find(s => s.student_id === studentId))} onViewSeatOccupants={handleViewSeatOccupants} />;
             case 'students': return <StudentManagement students={students} onAddStudent={() => handleOpenModal('addStudent')} onDepart={(s) => handleOpenModal('departStudent', s)} onEdit={(s) => handleOpenModal('editStudent', s)} onDelete={(s) => handleOpenModal('deleteStudent', s)} onView={(id) => { setActiveView('dashboard'); handleDashboardSearch(id); }} />;
             case 'fees': return <FeeManagement students={students} onPayFee={(s) => handleOpenModal('feeProfile', s)} onMarkAsDue={handleMarkAsDue} onPrintReceipt={(s) => handleOpenModal('printReceipt', s)} onWhatsApp={handleWhatsAppMessage} onViewProfile={(s) => handleOpenModal('studentProfileDetail', s)} onReactivate={(s) => handleOpenModal('reactivateStudent', s)} />;
@@ -982,7 +942,7 @@ const App = () => {
             case 'departures': return <DeparturesView departedStudents={departedStudents} />;
             case 'settings': return <SettingsView feeStructure={feeStructure} onUpdate={setFeeStructure} />;
             case 'support': return <SupportView />;
-            default: return <DashboardView stats={dashboardStats} activeStudents={activeStudents} onSearch={handleDashboardSearch} profile={dashboardProfile} libraryName={libraryProfile?.library_name} />;
+            default: return <DashboardView stats={dashboardStats} activeStudents={activeStudents} onSearch={handleDashboardSearch} profile={dashboardProfile} onClearSearch={clearDashboardSearch} libraryName={libraryProfile?.library_name} />;
         }
     };
 
@@ -1012,13 +972,21 @@ const App = () => {
         <>
             <style>{`.styled-scrollbar::-webkit-scrollbar{width:8px;height:8px;}.styled-scrollbar::-webkit-scrollbar-track{background-color:#f0f0f0;border-radius:10px;}.styled-scrollbar::-webkit-scrollbar-thumb{background-color:#c1c1c1;border-radius:10px;border:2px solid #f0f0f0;}.styled-scrollbar::-webkit-scrollbar-thumb:hover{background-color:#a8a8a8;}`}</style>
             <div className="flex h-screen bg-gray-100 font-sans">
-                <Sidebar setActiveView={setActiveView} activeView={activeView} onSignOut={handleSignOut} libraryName={libraryProfile?.library_name} />
+                <Sidebar
+                    setActiveView={setActiveView}
+                    activeView={activeView}
+                    onSignOut={handleSignOut}
+                    libraryName={libraryProfile?.library_name}
+                    isSidebarOpen={isSidebarOpen}
+                    setIsSidebarOpen={setIsSidebarOpen}
+                />
                 <main className="flex-1 flex flex-col overflow-hidden">
                     <Header
                         userEmail={session.user.email}
                         libraryName={libraryProfile?.library_name}
                         trialTimeLeft={trialTimeLeft}
-                        subscriptionDaysLeft={subscriptionDaysLeft}
+                        subscriptionStatus={subscriptionStatus}
+                        onMenuClick={() => setIsSidebarOpen(!isSidebarOpen)}
                     />
                     <div className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-6 lg:p-8">
                         <div className="max-w-7xl mx-auto">{renderView()}</div>
@@ -1134,7 +1102,7 @@ const ModalRouter = ({ content, onClose, isSubmitting, ...props }) => {
 
 // --- UI & VIEW COMPONENTS ---
 const SplashScreen = () => (<div className="flex h-screen w-full items-center justify-center bg-indigo-600"><div className="text-center text-white animate-pulse"><BookOpen size={80} className="mx-auto mb-4" /><h1 className="text-5xl font-bold tracking-wider">Library MS</h1></div></div>);
-const Header = ({ userEmail, libraryName, trialTimeLeft, subscriptionDaysLeft }) => {
+const Header = ({ userEmail, libraryName, trialTimeLeft, subscriptionStatus, onMenuClick }) => {
     const formatTime = (ms) => {
         if (ms === null || ms <= 0) return null;
         const totalSeconds = Math.floor(ms / 1000);
@@ -1144,10 +1112,43 @@ const Header = ({ userEmail, libraryName, trialTimeLeft, subscriptionDaysLeft })
     };
 
     const timeLeftDisplay = formatTime(trialTimeLeft);
+    const { daysLeft, expiresAt } = subscriptionStatus;
+
+    const getSubscriptionPill = () => {
+        if (daysLeft === null || timeLeftDisplay) return null;
+
+        if (daysLeft === 'Lifetime') {
+            return (
+                <div className="hidden sm:flex items-center gap-2 bg-green-100 text-green-800 text-sm font-bold px-3 py-1.5 rounded-full">
+                    <ShieldCheck size={16} />
+                    <span>Lifetime Access</span>
+                </div>
+            );
+        }
+
+        const bgColor = daysLeft > 7 ? 'bg-green-100' : 'bg-yellow-100';
+        const textColor = daysLeft > 7 ? 'text-green-800' : 'text-yellow-800';
+        const message = daysLeft > 0 ? `${daysLeft} Days Left` : 'Expired';
+
+        return (
+            <div className={`hidden sm:flex items-center gap-2 ${bgColor} ${textColor} text-sm font-bold px-3 py-1.5 rounded-full`}>
+                <CalendarClock size={16} />
+                <div className="flex flex-col text-left">
+                    <span className="font-semibold">{message}</span>
+                    {expiresAt && <span className="text-xs font-normal">Expires on {expiresAt}</span>}
+                </div>
+            </div>
+        );
+    };
 
     return (
         <header className="bg-white shadow-sm p-4 flex justify-between items-center z-30 relative">
-            <h2 className="text-xl md:text-2xl font-semibold text-gray-700 truncate">{libraryName || 'Library Management'}</h2>
+            <div className="flex items-center gap-4">
+                <button onClick={onMenuClick} className="lg:hidden text-gray-600">
+                    <Menu size={24} />
+                </button>
+                <h2 className="text-xl md:text-2xl font-semibold text-gray-700 truncate">{libraryName || 'Library Management'}</h2>
+            </div>
             <div className="flex items-center gap-4">
                 {timeLeftDisplay && (
                     <div className="hidden sm:flex items-center gap-2 bg-yellow-100 text-yellow-800 text-sm font-bold px-3 py-1 rounded-full animate-pulse">
@@ -1155,33 +1156,110 @@ const Header = ({ userEmail, libraryName, trialTimeLeft, subscriptionDaysLeft })
                         <span>Trial Ends In: {timeLeftDisplay}</span>
                     </div>
                 )}
-                {subscriptionDaysLeft !== null && !timeLeftDisplay && (
-                     <div className="hidden sm:flex items-center gap-2 bg-green-100 text-green-800 text-sm font-bold px-3 py-1 rounded-full">
-                        <ShieldCheck size={16} />
-                        <span>
-                            {typeof subscriptionDaysLeft === 'string'
-                                ? 'Lifetime Access'
-                                : `${subscriptionDaysLeft} Days Left`
-                            }
-                        </span>
-                    </div>
-                )}
+                {getSubscriptionPill()}
                 <div className="text-sm text-gray-600 hidden sm:block">{userEmail}</div>
             </div>
         </header>
     );
 };
 
-const Sidebar = ({ setActiveView, activeView, onSignOut, libraryName }) => {
+const Sidebar = ({ setActiveView, activeView, onSignOut, libraryName, isSidebarOpen, setIsSidebarOpen }) => {
     const navItems = [{ id: 'dashboard', icon: <User size={20} />, label: 'Dashboard' }, { id: 'seats', icon: <Armchair size={20} />, label: 'Seat Matrix' }, { id: 'students', icon: <Users size={20} />, label: 'Students' }, { id: 'fees', icon: <DollarSign size={20} />, label: 'Fees' }, { id: 'reports', icon: <BookMarked size={20} />, label: 'Reports' }, { id: 'departures', icon: <History size={20} />, label: 'Departures' }, { id: 'settings', icon: <Settings size={20} />, label: 'Settings' }, { id: 'support', icon: <LifeBuoy size={20} />, label: 'Support' },];
-    return (<nav className="w-16 md:w-64 bg-white text-gray-800 shadow-lg flex flex-col transition-all duration-300"><div className="flex items-center justify-center md:justify-start p-4 border-b"><BookOpen className="text-indigo-600 h-8 w-8" /><h1 className="hidden md:block ml-3 text-xl font-bold text-indigo-600 truncate">{libraryName || 'Library'}</h1></div><ul className="mt-6 flex-1">{navItems.map(item => (<li key={item.id} className="px-2 md:px-4"><button type="button" onClick={() => setActiveView(item.id)} className={`w-full text-left flex items-center justify-center md:justify-start p-3 my-2 rounded-lg transition-colors duration-200 ${activeView === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-indigo-100 hover:text-indigo-600'}`}>{item.icon}<span className="hidden md:block ml-4 font-medium">{item.label}</span></button></li>))}</ul><div className="p-4 border-t"><button onClick={onSignOut} className="flex items-center justify-center md:justify-start p-3 w-full rounded-lg transition-colors duration-200 text-red-500 hover:bg-red-100"><LogOut size={20} /><span className="hidden md:block ml-4 font-medium">Sign Out</span></button></div></nav>);
+    
+    const handleNavigation = (view) => {
+        setActiveView(view);
+        if (window.innerWidth < 1024) {
+            setIsSidebarOpen(false);
+        }
+    };
+    
+    return (
+        <>
+            <div className={`fixed lg:relative inset-0 z-40 lg:z-auto transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+                <nav className="w-64 bg-white h-full text-gray-800 shadow-lg flex flex-col">
+                    <div className="flex items-center justify-between p-4 border-b">
+                        <div className="flex items-center">
+                            <BookOpen className="text-indigo-600 h-8 w-8" />
+                            <h1 className="ml-3 text-xl font-bold text-indigo-600 truncate">{libraryName || 'Library'}</h1>
+                        </div>
+                        <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-gray-500">
+                           <X size={24} />
+                        </button>
+                    </div>
+                    <ul className="mt-6 flex-1">
+                        {navItems.map(item => (
+                            <li key={item.id} className="px-4">
+                                <button
+                                    type="button"
+                                    onClick={() => handleNavigation(item.id)}
+                                    className={`w-full text-left flex items-center p-3 my-2 rounded-lg transition-colors duration-200 ${activeView === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-indigo-100 hover:text-indigo-600'}`}
+                                >
+                                    {item.icon}
+                                    <span className="ml-4 font-medium">{item.label}</span>
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                    <div className="p-4 border-t">
+                        <button onClick={onSignOut} className="flex items-center p-3 w-full rounded-lg transition-colors duration-200 text-red-500 hover:bg-red-100">
+                            <LogOut size={20} />
+                            <span className="ml-4 font-medium">Sign Out</span>
+                        </button>
+                    </div>
+                </nav>
+            </div>
+            {isSidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
+        </>
+    );
 };
-const DashboardView = ({ stats, activeStudents, onSearch, profile, onCardClick, libraryName, totalIncome, isIncomeVisible, setIsIncomeVisible, onIncomeClick }) => (
-    <div className="space-y-6 md:space-y-8">
-        <div className="bg-white p-6 rounded-xl shadow-md"><h2 className="text-3xl font-bold text-gray-800">Welcome back,</h2><p className="text-indigo-600 text-lg">{libraryName}!</p></div>
-        {profile ? (<StudentProfileCard student={profile} />) : (<><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"><StatCard label="Active Students" value={stats.totalStudents} color="blue" icon={<Users />} onClick={() => onCardClick('Active Students', activeStudents)} /><StatCard label="Fee Alerts" value={stats.feesPendingList.length} color="red" icon={<AlertTriangle />} onClick={() => onCardClick('Students with Fee Alerts', stats.feesPendingList)} /><StatCard label="Pending Fees" value={`₹${stats.totalFeesPending.toLocaleString('en-IN')}`} color="yellow" icon={<DollarSign />} onClick={() => onCardClick('Students with Pending Fees', stats.feesPendingList)} /><StatCard label="Total Income" value={isIncomeVisible ? `₹${totalIncome.toLocaleString('en-IN')}` : '••••••••'} color="green" icon={<TrendingUp />} onClick={isIncomeVisible ? () => setIsIncomeVisible(false) : onIncomeClick} isSensitive={true} isRevealed={isIncomeVisible} /></div><div className="bg-white p-6 rounded-xl shadow-md"><h3 className="text-2xl font-semibold text-gray-800 mb-4">Find Student Profile</h3><div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Search by Name, Mobile, or Reg. No..." className="w-full p-4 pl-12 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" onChange={(e) => onSearch(e.target.value)} /></div></div><DashboardCharts students={activeStudents} /></>)}
-    </div>
-);
+
+const DashboardView = ({ stats, activeStudents, onSearch, profile, onClearSearch, onCardClick, libraryName, totalIncome, isIncomeVisible, setIsIncomeVisible, onIncomeClick }) => {
+    const searchInputRef = useRef(null);
+
+    const handleClearAndFocus = () => {
+        onClearSearch();
+        if (searchInputRef.current) {
+            searchInputRef.current.value = '';
+            searchInputRef.current.focus();
+        }
+    }
+
+    return (
+        <div className="space-y-6 md:space-y-8">
+            {profile ? (
+                <StudentProfileCard student={profile} onClearSearch={handleClearAndFocus} />
+            ) : (
+                <>
+                    <div className="bg-white p-6 rounded-xl shadow-md">
+                        <h2 className="text-3xl font-bold text-gray-800">Welcome back,</h2>
+                        <p className="text-indigo-600 text-lg">{libraryName}!</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <StatCard label="Active Students" value={stats.totalStudents} color="blue" icon={<Users />} onClick={() => onCardClick('Active Students', activeStudents)} />
+                        <StatCard label="Fee Alerts" value={stats.feesPendingList.length} color="red" icon={<AlertTriangle />} onClick={() => onCardClick('Students with Fee Alerts', stats.feesPendingList)} />
+                        <StatCard label="Pending Fees" value={`₹${stats.totalFeesPending.toLocaleString('en-IN')}`} color="yellow" icon={<DollarSign />} onClick={() => onCardClick('Students with Pending Fees', stats.feesPendingList)} />
+                        <StatCard label="Total Income" value={isIncomeVisible ? `₹${totalIncome.toLocaleString('en-IN')}` : '••••••••'} color="green" icon={<TrendingUp />} onClick={isIncomeVisible ? () => setIsIncomeVisible(false) : onIncomeClick} isSensitive={true} isRevealed={isIncomeVisible} />
+                    </div>
+                    <div className="bg-white p-6 rounded-xl shadow-md">
+                        <h3 className="text-2xl font-semibold text-gray-800 mb-4">Find Student Profile</h3>
+                        <div className="relative">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                placeholder="Search by Name, Mobile, or Reg. No..."
+                                className="w-full p-4 pl-12 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                                onChange={(e) => onSearch(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DashboardCharts students={activeStudents} />
+                </>
+            )}
+        </div>
+    );
+};
+
 const SupportView = () => (
     <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl mx-auto animate-fade-in-up">
         <div className="flex flex-col items-center text-center mb-8"><LifeBuoy className="h-16 w-16 text-indigo-500 mb-4" /><h2 className="text-3xl font-bold text-gray-800">Contact & Support</h2><p className="mt-2 text-gray-600">For any technical issues, feature requests, or questions, please feel free to reach out through any of the channels below.</p></div>
@@ -1203,10 +1281,41 @@ const StatCard = ({ label, value, color, icon, onClick, isSensitive = false, isR
         </div>
     );
 };
-const StudentProfileCard = ({ student }) => {
-    if (student.notFound) { return (<div className="bg-white p-6 rounded-lg shadow-xl text-center"><h3 className="text-2xl font-bold text-gray-800">Student Not Found</h3><p className="text-gray-500">No student matches your search query.</p></div>); }
+const StudentProfileCard = ({ student, onClearSearch }) => {
+    if (student.notFound) {
+        return (
+            <div className="bg-white p-6 rounded-lg shadow-xl text-center relative">
+                <button onClick={onClearSearch} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 transition-colors">
+                    <XCircle size={24} />
+                </button>
+                <h3 className="text-2xl font-bold text-gray-800">Student Not Found</h3>
+                <p className="text-gray-500">No student matches your search query.</p>
+            </div>
+        );
+    }
     const isFeeDue = new Date(student.next_due_date) < getTodayDate();
-    return (<div className="bg-white p-6 rounded-lg shadow-xl animate-fade-in"><div className="flex flex-col sm:flex-row items-center gap-6"><img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-32 h-32 rounded-full object-cover border-4 border-indigo-200" /><div className="flex-1 text-center sm:text-left"><h2 className="text-3xl font-bold text-gray-800">{student.title} {student.name}</h2><p className="text-indigo-600 font-mono">Reg. No: {student.student_id}</p><div className="flex items-center justify-center sm:justify-start gap-4 mt-2 text-gray-600"><span className="flex items-center gap-1"><Phone size={16} /> {student.mobile}</span><span className="flex items-center gap-1"><Armchair size={16} /> Seat {student.seat_number}</span></div></div><div className={`p-4 rounded-lg text-center ${isFeeDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}><p className="font-bold text-lg">{isFeeDue ? 'Fee Due' : 'Fee Paid'}</p><p className="text-sm">Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p></div></div></div>);
+    return (
+        <div className="bg-white p-6 rounded-lg shadow-xl animate-fade-in relative">
+            <button onClick={onClearSearch} className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 transition-colors">
+                <XCircle size={24} />
+            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-6">
+                <img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-32 h-32 rounded-full object-cover border-4 border-indigo-200" />
+                <div className="flex-1 text-center sm:text-left">
+                    <h2 className="text-3xl font-bold text-gray-800">{student.title} {student.name}</h2>
+                    <p className="text-indigo-600 font-mono">Reg. No: {student.student_id}</p>
+                    <div className="flex items-center justify-center sm:justify-start gap-4 mt-2 text-gray-600">
+                        <span className="flex items-center gap-1"><Phone size={16} /> {student.mobile}</span>
+                        <span className="flex items-center gap-1"><Armchair size={16} /> Seat {student.seat_number}</span>
+                    </div>
+                </div>
+                <div className={`p-4 rounded-lg text-center ${isFeeDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                    <p className="font-bold text-lg">{isFeeDue ? 'Fee Due' : 'Fee Paid'}</p>
+                    <p className="text-sm">Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p>
+                </div>
+            </div>
+        </div>
+    );
 };
 const SeatMatrix = ({ seats, activeStudents, onSeatClick, onViewStudent, onViewSeatOccupants }) => {
     const [searchQuery, setSearchQuery] = useState('');
@@ -1239,21 +1348,121 @@ const SeatMatrix = ({ seats, activeStudents, onSeatClick, onViewStudent, onViewS
     };
     return (
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4"><h3 className="text-2xl font-semibold text-gray-800">Seat Matrix</h3><div className="flex gap-2 items-center w-full md:w-auto"><div className="relative flex-grow"><input type="number" placeholder="Search Seat No..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSeatSearch()} className="w-full p-2 pl-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div><button onClick={handleSeatSearch} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"><Search size={20} /></button><button onClick={clearSearch} className="p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"><X size={20} /></button></div></div>
-            {searchResult ? (<div className="animate-fade-in">{searchResult.error ? (<div className="text-center p-8 bg-red-50 text-red-700 rounded-lg">{searchResult.error}</div>) : (<div><h4 className="text-xl font-semibold mb-4 text-gray-700">Result for Seat #{searchResult.seat.number}</h4>{searchResult.occupants.length > 0 ? (<div className="grid grid-cols-1 md:grid-cols-2 gap-4">{searchResult.occupants.map(student => (<div key={student.id} className="p-4 border rounded-lg flex items-center gap-4"><img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-20 h-20 rounded-full object-cover" /><div><p className="font-bold text-lg">{student.name}</p><p className="text-sm font-mono text-indigo-600">Reg: {student.student_id}</p><p className="text-sm text-gray-600">Shift: {student.shift || 'Full-time'}</p><button onClick={() => onViewStudent(student.student_id)} className="text-sm text-indigo-500 hover:underline mt-1">View Profile</button></div></div>))}</div>) : (<div className="text-center p-8 bg-green-50 text-green-700 rounded-lg">Seat #{searchResult.seat.number} is currently available.</div>)}</div>)}</div>) : (<><div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-6 text-xs md:text-sm"><div className="flex items-center"><div className="w-4 h-4 bg-pink-200 border border-pink-400 rounded-sm mr-2"></div><span>Girl's Seat</span></div><div className="flex items-center"><div className="w-4 h-4 bg-blue-200 border border-blue-400 rounded-sm mr-2"></div><span>Boy's Seat</span></div><div className="flex items-center"><div className="w-4 h-4 bg-gray-400 border border-gray-600 rounded-sm mr-2"></div><span>Fully Occupied</span></div><div className="flex items-center"><div className="w-4 h-4 rounded-sm mr-2" style={{ background: 'linear-gradient(to bottom, #9ca3af 50%, #e2e8f0 50%)' }}></div><span>Morning Occupied</span></div><div className="flex items-center"><div className="w-4 h-4 rounded-sm mr-2" style={{ background: 'linear-gradient(to top, #9ca3af 50%, #e2e8f0 50%)' }}></div><span>Evening Occupied</span></div></div><div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">{seats.map(seat => { const state = getSeatState(seat); return (<div key={seat.number} style={state.style} className={`relative group w-full aspect-square flex flex-col items-center justify-center border rounded-md cursor-pointer transition-all duration-200 ${state.className}`} onClick={() => handleSeatClick(seat, state)}><span className="font-bold text-base md:text-lg">{seat.number}</span>{state.icon}</div>); })}</div></>)}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                <h3 className="text-2xl font-semibold text-gray-800">Seat Matrix</h3>
+                <div className="flex gap-2 items-center w-full md:w-auto">
+                    <div className="relative flex-grow">
+                        <input type="number" placeholder="Search Seat No..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSeatSearch()} className="w-full p-2 pl-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    </div>
+                    <button onClick={handleSeatSearch} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"><Search size={20} /></button>
+                    <button onClick={clearSearch} className="p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"><X size={20} /></button>
+                </div>
+            </div>
+            {searchResult ? (
+                <div className="animate-fade-in">
+                    {searchResult.error ? (
+                        <div className="text-center p-8 bg-red-50 text-red-700 rounded-lg">{searchResult.error}</div>
+                    ) : (
+                        <div>
+                            <h4 className="text-xl font-semibold mb-4 text-gray-700">Result for Seat #{searchResult.seat.number}</h4>
+                            {searchResult.occupants.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {searchResult.occupants.map(student => (
+                                        <div key={student.id} className="p-4 border rounded-lg flex items-center gap-4">
+                                            <img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-20 h-20 rounded-full object-cover" />
+                                            <div>
+                                                <p className="font-bold text-lg">{student.name}</p>
+                                                <p className="text-sm font-mono text-indigo-600">Reg: {student.student_id}</p>
+                                                <p className="text-sm text-gray-600">Shift: {student.shift || 'Full-time'}</p>
+                                                <button onClick={() => onViewStudent(student.student_id)} className="text-sm text-indigo-500 hover:underline mt-1">View Profile</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center p-8 bg-green-50 text-green-700 rounded-lg">Seat #{searchResult.seat.number} is currently available.</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-6 text-xs md:text-sm">
+                        <div className="flex items-center"><div className="w-4 h-4 bg-pink-200 border border-pink-400 rounded-sm mr-2"></div><span>Girl's Seat</span></div>
+                        <div className="flex items-center"><div className="w-4 h-4 bg-blue-200 border border-blue-400 rounded-sm mr-2"></div><span>Boy's Seat</span></div>
+                        <div className="flex items-center"><div className="w-4 h-4 bg-gray-400 border border-gray-600 rounded-sm mr-2"></div><span>Fully Occupied</span></div>
+                        <div className="flex items-center"><div className="w-4 h-4 rounded-sm mr-2" style={{ background: 'linear-gradient(to bottom, #9ca3af 50%, #e2e8f0 50%)' }}></div><span>Morning Occupied</span></div>
+                        <div className="flex items-center"><div className="w-4 h-4 rounded-sm mr-2" style={{ background: 'linear-gradient(to top, #9ca3af 50%, #e2e8f0 50%)' }}></div><span>Evening Occupied</span></div>
+                    </div>
+                    <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
+                        {seats.map(seat => {
+                            const state = getSeatState(seat);
+                            return (
+                                <div key={seat.number} style={state.style} className={`relative group w-full aspect-square flex flex-col items-center justify-center border rounded-md cursor-pointer transition-all duration-200 ${state.className}`} onClick={() => handleSeatClick(seat, state)}>
+                                    <span className="font-bold text-base md:text-lg">{seat.number}</span>
+                                    {state.icon}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </>
+            )}
         </div>
     );
 };
+
 const StudentManagement = ({ students, onAddStudent, onView, onEdit, onDelete, onDepart }) => {
     const [filter, setFilter] = useState('active');
     const filteredStudents = useMemo(() => students.filter(s => s.status === filter), [students, filter]);
     return (
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
-            <div className="flex flex-col md:flex-row justify-between items-center mb-6 border-b pb-4 gap-4"><h3 className="text-2xl font-semibold text-gray-800">Student Management</h3><div className="flex items-center gap-2 md:gap-4 w-full md:w-auto"><div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg flex-grow md:flex-grow-0"><button onClick={() => setFilter('active')} className={`w-1/2 md:w-auto px-4 py-1 rounded-md text-sm font-semibold transition ${filter === 'active' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}>Active</button><button onClick={() => setFilter('departed')} className={`w-1/2 md:w-auto px-4 py-1 rounded-md text-sm font-semibold transition ${filter === 'departed' ? 'bg-red-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}>Departed</button></div><button onClick={onAddStudent} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"><Plus size={20} className="mr-0 md:mr-2" /><span className="hidden md:inline">Add Student</span></button></div></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredStudents.length > 0 ? filteredStudents.map(s => (<div key={s.id} className="bg-white border rounded-lg shadow-sm hover:shadow-lg transition-shadow duration-300 flex flex-col"><div className="p-4 flex-grow"><div className="flex items-start gap-4"><img src={s.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={s.name} className="w-20 h-20 rounded-full object-cover border-2 border-gray-200" /><div className="flex-1"><h4 className="font-bold text-lg text-gray-800">{s.title} {s.name}</h4><p className="text-sm text-indigo-600 font-mono">Reg: {s.student_id}</p><p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Phone size={14} />{s.mobile}</p><p className="text-sm text-gray-500 flex items-center gap-1"><Armchair size={14} />Seat {s.seat_number}</p></div></div></div><div className="bg-gray-50 p-3 border-t"><div className="flex justify-end gap-2 flex-wrap"><button onClick={() => onView(s.student_id)} className="p-2 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200" title="View Profile"><Eye size={16} /></button>{filter === 'active' && (<><button onClick={() => onEdit(s)} className="p-2 rounded-md bg-yellow-100 text-yellow-600 hover:bg-yellow-200" title="Edit Student"><Edit size={16} /></button><button onClick={() => onDelete(s)} className="p-2 rounded-md bg-red-100 text-red-600 hover:bg-red-200" title="Delete Student"><Trash2 size={16} /></button><button onClick={() => onDepart(s)} className="p-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300" title="Depart Student"><UserX size={16} /></button></>)}</div></div></div>)) : (<div className="col-span-1 md:col-span-2 lg:col-span-3 text-center py-12 text-gray-500"><p>No {filter} students found.</p></div>)}</div>
+            <div className="flex flex-col md:flex-row justify-between items-center mb-6 border-b pb-4 gap-4">
+                <h3 className="text-2xl font-semibold text-gray-800">Student Management</h3>
+                <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto">
+                    <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg flex-grow md:flex-grow-0">
+                        <button onClick={() => setFilter('active')} className={`w-1/2 md:w-auto px-4 py-1 rounded-md text-sm font-semibold transition ${filter === 'active' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}>Active</button>
+                        <button onClick={() => setFilter('departed')} className={`w-1/2 md:w-auto px-4 py-1 rounded-md text-sm font-semibold transition ${filter === 'departed' ? 'bg-red-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}>Departed</button>
+                    </div>
+                    <button onClick={onAddStudent} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"><Plus size={20} className="mr-0 md:mr-2" /><span className="hidden md:inline">Add Student</span></button>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredStudents.length > 0 ? filteredStudents.map(s => (
+                    <div key={s.id} className="bg-white border rounded-lg shadow-sm hover:shadow-lg transition-shadow duration-300 flex flex-col">
+                        <div className="p-4 flex-grow">
+                            <div className="flex items-start gap-4">
+                                <img src={s.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={s.name} className="w-20 h-20 rounded-full object-cover border-2 border-gray-200" />
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-lg text-gray-800">{s.title} {s.name}</h4>
+                                    <p className="text-sm text-indigo-600 font-mono">Reg: {s.student_id}</p>
+                                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Phone size={14} />{s.mobile}</p>
+                                    <p className="text-sm text-gray-500 flex items-center gap-1"><Armchair size={14} />Seat {s.seat_number}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-gray-50 p-3 border-t">
+                            <div className="flex justify-end gap-2 flex-wrap">
+                                <button onClick={() => onView(s.student_id)} className="p-2 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200" title="View Profile"><Eye size={16} /></button>
+                                {filter === 'active' && (
+                                    <>
+                                        <button onClick={() => onEdit(s)} className="p-2 rounded-md bg-yellow-100 text-yellow-600 hover:bg-yellow-200" title="Edit Student"><Edit size={16} /></button>
+                                        <button onClick={() => onDelete(s)} className="p-2 rounded-md bg-red-100 text-red-600 hover:bg-red-200" title="Delete Student"><Trash2 size={16} /></button>
+                                        <button onClick={() => onDepart(s)} className="p-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300" title="Depart Student"><UserX size={16} /></button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )) : (
+                    <div className="col-span-1 md:col-span-2 lg:col-span-3 text-center py-12 text-gray-500">
+                        <p>No {filter} students found.</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
+
 const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhatsApp, onViewProfile, onReactivate }) => {
     const initialFilters = { searchQuery: '', dateRange: { from: '', to: '' }, feeStatus: 'all', shiftType: 'all', studentStatus: 'all', dateFilterType: 'next_due_date', };
     const [filters, setFilters] = useState(initialFilters);
@@ -1281,13 +1490,126 @@ const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhat
     }, [students, filters]);
     return (
         <div className="space-y-6">
-            <div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 border-b pb-4"><h3 className="text-2xl font-semibold text-gray-800">Fee Dashboard</h3><Button onClick={resetFilters} className="bg-gray-200 text-gray-700 hover:bg-gray-300 w-full md:w-auto"><FilterX size={16} className="mr-2" /> Reset Filters</Button></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">Search Student</label><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" name="searchQuery" value={filters.searchQuery} onChange={handleFilterChange} placeholder="Search by Name, Mobile, or Reg. No..." className="w-full p-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Fee Status</label><select name="feeStatus" value={filters.feeStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Fee Status</option><option value="paid">Paid</option><option value="due">Due</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Student Status</label><select name="studentStatus" value={filters.studentStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Students</option><option value="active">Active</option><option value="departed">Inactive</option></select></div></div></div>
-            <div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Student Fee Status <span className="text-indigo-600 font-bold">({filteredStudents.length} students found)</span></h4><div className="overflow-auto max-h-[60vh] styled-scrollbar"><table className="w-full text-left"><thead className="bg-gray-50 sticky top-0 z-10"><tr className="border-b"><th className="p-3 text-sm font-semibold text-gray-600">Name</th><th className="p-3 text-sm font-semibold text-gray-600 hidden sm:table-cell">Fee Status</th><th className="p-3 text-sm font-semibold text-gray-600 hidden md:table-cell">Fee Period</th><th className="p-3 text-sm font-semibold text-gray-600">Actions</th></tr></thead><tbody>{filteredStudents.length > 0 ? filteredStudents.map(s => { const isDue = new Date(s.next_due_date) < getTodayDate(); const toDate = new Date(s.next_due_date); const fromDate = new Date(s.next_due_date); fromDate.setMonth(fromDate.getMonth() - 1); return (<tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3"><p className="font-medium text-gray-800">{s.name} {s.status === 'departed' && <span className="text-xs text-red-500 font-normal">(Inactive)</span>}</p><p className="text-xs text-gray-500 font-mono">Reg: {s.student_id}</p></td><td className="p-3 hidden sm:table-cell"><span className={`px-3 py-1 rounded-full text-xs font-semibold ${s.status === 'departed' ? 'bg-gray-200 text-gray-700' : isDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{s.status === 'departed' ? 'Inactive' : isDue ? 'Due' : 'Paid'}</span></td><td className="p-3 text-sm text-gray-600 hidden md:table-cell">{`${fromDate.toLocaleDateString()} to ${toDate.toLocaleDateString()}`}</td><td className="p-3"><div className="flex items-center gap-2 flex-wrap">{s.status === 'active' ? (<><button onClick={() => onPayFee(s)} className="bg-blue-500 text-white px-3 py-1 text-xs rounded-md hover:bg-blue-600">Pay Fee</button>{!isDue && (<button onClick={() => onMarkAsDue(s.id)} className="bg-yellow-500 text-white px-3 py-1 text-xs rounded-md hover:bg-yellow-600 flex items-center gap-1" title="Mark fee as due immediately"><AlertTriangle size={14} /> Mark Due</button>)}<button onClick={() => onPrintReceipt(s)} className="bg-teal-500 text-white p-2 rounded-md hover:bg-teal-600 flex items-center gap-1" title="Print Receipt"><Printer size={14} /></button><button onClick={() => onWhatsApp(s, isDue ? 'due' : 'paid')} className="bg-green-500 text-white p-2 rounded-md hover:bg-green-600 flex items-center gap-1" title="Send WhatsApp Message"><MessageSquare size={14} /></button></>) : (<button onClick={() => onReactivate(s)} className="bg-green-600 text-white px-3 py-1 text-xs rounded-md hover:bg-green-700 flex items-center gap-1" title="Reactivate Student"><UserCheck size={14} /> Reactivate</button>)}<button onClick={() => onViewProfile(s)} className="bg-gray-500 text-white p-2 rounded-md hover:bg-gray-600 flex items-center gap-1" title="View Full Profile"><Eye size={14} /></button></div></td></tr>); }) : (<tr><td colSpan="4" className="text-center p-8 text-gray-500">No students match the current filters.</td></tr>)}</tbody></table></div></div>
+            <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 border-b pb-4">
+                    <h3 className="text-2xl font-semibold text-gray-800">Fee Dashboard</h3>
+                    <Button onClick={resetFilters} className="bg-gray-200 text-gray-700 hover:bg-gray-300 w-full md:w-auto"><FilterX size={16} className="mr-2" /> Reset Filters</Button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="lg:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Search Student</label>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input type="text" name="searchQuery" value={filters.searchQuery} onChange={handleFilterChange} placeholder="Search by Name, Mobile, or Reg. No..." className="w-full p-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Fee Status</label>
+                        <select name="feeStatus" value={filters.feeStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white">
+                            <option value="all">All Fee Status</option>
+                            <option value="paid">Paid</option>
+                            <option value="due">Due</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Student Status</label>
+                        <select name="studentStatus" value={filters.studentStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white">
+                            <option value="all">All Students</option>
+                            <option value="active">Active</option>
+                            <option value="departed">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
+                <h4 className="text-lg font-semibold text-gray-700 mb-4">Student Fee Status <span className="text-indigo-600 font-bold">({filteredStudents.length} students found)</span></h4>
+                <div className="overflow-auto max-h-[60vh] styled-scrollbar">
+                    <table className="w-full text-left">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
+                            <tr className="border-b">
+                                <th className="p-3 text-sm font-semibold text-gray-600">Name</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 hidden sm:table-cell">Fee Status</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 hidden md:table-cell">Fee Period</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredStudents.length > 0 ? filteredStudents.map(s => {
+                                const isDue = new Date(s.next_due_date) < getTodayDate();
+                                const toDate = new Date(s.next_due_date);
+                                const fromDate = new Date(s.next_due_date);
+                                fromDate.setMonth(fromDate.getMonth() - 1);
+                                return (
+                                    <tr key={s.id} className="border-b hover:bg-gray-50">
+                                        <td className="p-3">
+                                            <p className="font-medium text-gray-800">{s.name} {s.status === 'departed' && <span className="text-xs text-red-500 font-normal">(Inactive)</span>}</p>
+                                            <p className="text-xs text-gray-500 font-mono">Reg: {s.student_id}</p>
+                                        </td>
+                                        <td className="p-3 hidden sm:table-cell">
+                                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${s.status === 'departed' ? 'bg-gray-200 text-gray-700' : isDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{s.status === 'departed' ? 'Inactive' : isDue ? 'Due' : 'Paid'}</span>
+                                        </td>
+                                        <td className="p-3 text-sm text-gray-600 hidden md:table-cell">{`${fromDate.toLocaleDateString()} to ${toDate.toLocaleDateString()}`}</td>
+                                        <td className="p-3">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                {s.status === 'active' ? (
+                                                    <>
+                                                        <button onClick={() => onPayFee(s)} className="bg-blue-500 text-white px-3 py-1 text-xs rounded-md hover:bg-blue-600">Pay Fee</button>
+                                                        {!isDue && (<button onClick={() => onMarkAsDue(s.id)} className="bg-yellow-500 text-white px-3 py-1 text-xs rounded-md hover:bg-yellow-600 flex items-center gap-1" title="Mark fee as due immediately"><AlertTriangle size={14} /> Mark Due</button>)}
+                                                        <button onClick={() => onPrintReceipt(s)} className="bg-teal-500 text-white p-2 rounded-md hover:bg-teal-600 flex items-center gap-1" title="Print Receipt"><Printer size={14} /></button>
+                                                        <button onClick={() => onWhatsApp(s, isDue ? 'due' : 'paid')} className="bg-green-500 text-white p-2 rounded-md hover:bg-green-600 flex items-center gap-1" title="Send WhatsApp Message"><MessageSquare size={14} /></button>
+                                                    </>
+                                                ) : (
+                                                    <button onClick={() => onReactivate(s)} className="bg-green-600 text-white px-3 py-1 text-xs rounded-md hover:bg-green-700 flex items-center gap-1" title="Reactivate Student"><UserCheck size={14} /> Reactivate</button>
+                                                )}
+                                                <button onClick={() => onViewProfile(s)} className="bg-gray-500 text-white p-2 rounded-md hover:bg-gray-600 flex items-center gap-1" title="View Full Profile"><Eye size={14} /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            }) : (
+                                <tr><td colSpan="4" className="text-center p-8 text-gray-500">No students match the current filters.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     );
 };
+
 const DeparturesView = ({ departedStudents }) => (
-    <div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><h3 className="text-2xl font-semibold text-gray-800 mb-4">Departed Student History</h3><div className="overflow-x-auto"><table className="w-full text-left"><thead><tr className="bg-gray-100"><th className="p-3">Name</th><th className="p-3 hidden sm:table-cell">Departure Date</th><th className="p-3 hidden md:table-cell">Reason</th><th className="p-3">Credit Transferred</th></tr></thead><tbody>{departedStudents.length > 0 ? departedStudents.map(s => (<tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3 font-medium">{s.name}<p className="font-normal text-xs font-mono">Reg: {s.student_id}</p></td><td className="p-3 hidden sm:table-cell">{new Date(s.departure_date).toLocaleDateString()}</td><td className="p-3 text-sm text-gray-600 hidden md:table-cell">{s.departure_reason || <span className="text-gray-400">No reason given</span>}</td><td className="p-3">{s.transfer_log ? (<div><p className="font-medium">{s.transfer_log.transferredToName} <span className="font-normal text-green-700">({s.transfer_log.daysTransferred} days)</span></p><p className="text-xs text-gray-500 font-mono">Reg: {s.transfer_log.transferredToId}</p></div>) : (<span className="text-gray-500">N/A</span>)}</td></tr>)) : <tr><td colSpan="4" className="text-center p-4 text-gray-500">No students have departed yet.</td></tr>}</tbody></table></div></div>
+    <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
+        <h3 className="text-2xl font-semibold text-gray-800 mb-4">Departed Student History</h3>
+        <div className="overflow-x-auto">
+            <table className="w-full text-left">
+                <thead>
+                    <tr className="bg-gray-100">
+                        <th className="p-3">Name</th>
+                        <th className="p-3 hidden sm:table-cell">Departure Date</th>
+                        <th className="p-3 hidden md:table-cell">Reason</th>
+                        <th className="p-3">Credit Transferred</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {departedStudents.length > 0 ? departedStudents.map(s => (
+                        <tr key={s.id} className="border-b hover:bg-gray-50">
+                            <td className="p-3 font-medium">{s.name}<p className="font-normal text-xs font-mono">Reg: {s.student_id}</p></td>
+                            <td className="p-3 hidden sm:table-cell">{new Date(s.departure_date).toLocaleDateString()}</td>
+                            <td className="p-3 text-sm text-gray-600 hidden md:table-cell">{s.departure_reason || <span className="text-gray-400">No reason given</span>}</td>
+                            <td className="p-3">
+                                {s.transfer_log ? (
+                                    <div>
+                                        <p className="font-medium">{s.transfer_log.transferredToName} <span className="font-normal text-green-700">({s.transfer_log.daysTransferred} days)</span></p>
+                                        <p className="text-xs text-gray-500 font-mono">Reg: {s.transfer_log.transferredToId}</p>
+                                    </div>
+                                ) : (<span className="text-gray-500">N/A</span>)}
+                            </td>
+                        </tr>
+                    )) : <tr><td colSpan="4" className="text-center p-4 text-gray-500">No students have departed yet.</td></tr>}
+                </tbody>
+            </table>
+        </div>
+    </div>
 );
 const SettingsView = ({ feeStructure, onUpdate }) => {
     const [fees, setFees] = useState(feeStructure); const [saved, setSaved] = useState(false);

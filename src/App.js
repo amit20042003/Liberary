@@ -4,7 +4,10 @@ import {
     Phone, Image as ImageIcon, Settings, LogOut, CheckCircle, Edit, Trash2, Eye, History, BookMarked, Loader2, Printer, UploadCloud, ArrowLeft, XCircle, Mail, Lock, Download, FilterX, Sun, Moon, MessageSquare, UserX, UserCheck, KeyRound, EyeOff, TrendingUp, LifeBuoy, ShieldCheck, CalendarClock, Menu
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { createClient } from '@supabase/supabase-js';
+// ===== FIX: Replaced package imports with CDN links to resolve compilation errors =====
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+import imageCompression from 'https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/+esm';
+
 
 // --- SUPABASE CLIENT SETUP ---
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
@@ -247,8 +250,21 @@ const Auth = () => {
         if (error) {
             alert(error.error_description || error.message);
         } else if (data.user) {
-            // The database trigger now handles OTP creation automatically.
-            alert('Sign up successful! An OTP has been generated. Please proceed to verification.');
+            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+            const { error: codeInsertError } = await supabase
+                .from('registration_codes')
+                .insert({
+                    code: otp,
+                    claimed_by_user_id: data.user.id
+                });
+
+            if (codeInsertError) {
+                console.error("Failed to save OTP:", codeInsertError);
+                alert(`Sign up successful, but there was an error generating your verification code: ${codeInsertError.message}. Please contact support.`);
+            } else {
+                alert('Sign up successful! An OTP has been generated. Please check your database for the code and proceed to verification.');
+            }
         }
         setLoading(false);
     };
@@ -464,12 +480,17 @@ const SubscriptionScreen = ({ user, libraryProfile, onSubscriptionSuccess }) => 
             expires_at = new Date();
             expires_at.setDate(expires_at.getDate() + planDetails.duration_days);
         }
+        
+        // ===== MODIFICATION: Store subscription start and end dates in Supabase =====
+        const subscriptionStartDate = new Date().toISOString();
+        const subscriptionExpiresDate = expires_at ? expires_at.toISOString() : null;
 
         const { error: profileError } = await supabase
             .from('profiles')
             .update({
                 subscription_plan: selectedPlan,
-                subscription_expires_at: expires_at ? expires_at.toISOString() : null,
+                subscription_started_at: subscriptionStartDate,
+                subscription_expires_at: subscriptionExpiresDate,
             })
             .eq('id', user.id);
 
@@ -500,7 +521,7 @@ const SubscriptionScreen = ({ user, libraryProfile, onSubscriptionSuccess }) => 
             <div className="w-full max-w-2xl text-center">
                 <ShieldCheck className="mx-auto h-16 w-auto text-indigo-400 mb-4" />
                 <h1 className="text-4xl font-extrabold tracking-tight mb-2">Activate Your Subscription</h1>
-                <p className="text-lg text-gray-400 mb-8">Your trial has ended. Please choose a plan to continue.</p>
+                <p className="text-lg text-gray-400 mb-8">Your access has expired. Please choose a plan to continue.</p>
 
                 <div className="bg-gray-800 p-8 rounded-2xl shadow-2xl">
                     {!selectedPlan ? (
@@ -580,6 +601,13 @@ const initialState = {
 const getTodayDate = () => { const today = new Date(); today.setHours(0, 0, 0, 0); return today; };
 const debounce = (func, delay) => { let timeout; return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; };
 
+const isFeeDue = (nextDueDateStr) => {
+    if (!nextDueDateStr) return true;
+    const nextDueDate = new Date(nextDueDateStr);
+    nextDueDate.setHours(0, 0, 0, 0);
+    return nextDueDate <= getTodayDate();
+}
+
 // --- MAIN APP COMPONENT ---
 const App = () => {
     const [session, setSession] = useState(null);
@@ -595,9 +623,8 @@ const App = () => {
     const [dashboardProfile, setDashboardProfile] = useState(null);
     const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
     const [isIncomeVisible, setIsIncomeVisible] = useState(false);
-    const [trialTimeLeft, setTrialTimeLeft] = useState(null);
-    const [isTrialEndModalOpen, setIsTrialEndModalOpen] = useState(false);
-    const [subscriptionStatus, setSubscriptionStatus] = useState({ daysLeft: null, expiresAt: null });
+    const [timeLeft, setTimeLeft] = useState(null);
+    const [subscriptionStatus, setSubscriptionStatus] = useState({ daysLeft: null, expiresAt: null, isTrial: false });
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const fetchLibraryProfile = useCallback(async (user) => {
@@ -622,8 +649,8 @@ const App = () => {
         await supabase.auth.signOut();
         setSession(null);
         setLibraryProfile(null);
-        setTrialTimeLeft(null);
-        setSubscriptionStatus({ daysLeft: null, expiresAt: null });
+        setTimeLeft(null);
+        setSubscriptionStatus({ daysLeft: null, expiresAt: null, isTrial: false });
     };
 
     useEffect(() => {
@@ -663,51 +690,70 @@ const App = () => {
         return () => subscription.unsubscribe();
     }, [fetchLibraryProfile, fetchStudents]);
 
+    // ===== MODIFICATION: Centralized timer and status check based on Supabase profile data =====
     useEffect(() => {
-        if (session?.user && libraryProfile && !libraryProfile.subscription_plan) {
-            const registrationTime = new Date(session.user.created_at).getTime();
-            const trialDuration = 5 * 60 * 1000;
-            const trialEndTime = registrationTime + trialDuration;
-
-            const timer = setInterval(() => {
-                const now = new Date().getTime();
-                const timeLeft = trialEndTime - now;
-
-                if (timeLeft <= 0) {
-                    clearInterval(timer);
-                    setTrialTimeLeft(0);
-                    setIsTrialEndModalOpen(true);
-                } else {
-                    setTrialTimeLeft(timeLeft);
-                }
-            }, 1000);
-
-            return () => clearInterval(timer);
-        } else {
-            setTrialTimeLeft(null);
+        if (!session?.user || !libraryProfile) {
+            setTimeLeft(null);
+            setSubscriptionStatus({ daysLeft: null, expiresAt: null, isTrial: false });
+            return;
         }
-    }, [session, libraryProfile]);
 
-    useEffect(() => {
-        if (libraryProfile?.subscription_plan) {
-            if (libraryProfile.subscription_plan === 'Lifetime') {
-                setSubscriptionStatus({ daysLeft: 'Lifetime', expiresAt: null });
-            } else if (libraryProfile.subscription_expires_at) {
-                const now = new Date();
-                const expiresAtDate = new Date(libraryProfile.subscription_expires_at);
-                const timeLeft = expiresAtDate.getTime() - now.getTime();
+        const timer = setInterval(() => {
+            const now = new Date().getTime();
 
-                if (timeLeft > 0) {
-                    const daysLeft = Math.ceil(timeLeft / (1000 * 60 * 60 * 24));
-                    setSubscriptionStatus({ daysLeft, expiresAt: expiresAtDate.toLocaleDateString() });
-                } else {
-                    setSubscriptionStatus({ daysLeft: 0, expiresAt: expiresAtDate.toLocaleDateString() });
+            // Check for active subscription first
+            if (libraryProfile.subscription_plan) {
+                if (libraryProfile.subscription_plan === 'Lifetime') {
+                    setSubscriptionStatus({ daysLeft: 'Lifetime', expiresAt: null, isTrial: false });
+                    setTimeLeft(null);
+                    clearInterval(timer);
+                    return;
+                }
+                
+                if (libraryProfile.subscription_expires_at) {
+                    const expiry = new Date(libraryProfile.subscription_expires_at).getTime();
+                    if (now < expiry) {
+                        const diffTime = expiry - now;
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        setSubscriptionStatus({
+                            daysLeft: diffDays,
+                            expiresAt: new Date(libraryProfile.subscription_expires_at).toLocaleDateString(),
+                            isTrial: false,
+                        });
+                        setTimeLeft(diffTime);
+                    } else {
+                        // Subscription expired
+                        setSubscriptionStatus({
+                            daysLeft: 0,
+                            expiresAt: new Date(libraryProfile.subscription_expires_at).toLocaleDateString(),
+                            isTrial: false,
+                        });
+                        setTimeLeft(0);
+                    }
                 }
             }
-        } else {
-            setSubscriptionStatus({ daysLeft: null, expiresAt: null });
-        }
-    }, [libraryProfile]);
+            // If no subscription, check for trial
+            else if (libraryProfile.trial_expires_at) {
+                const trialEndTime = new Date(libraryProfile.trial_expires_at).getTime();
+                const timeLeftMs = trialEndTime - now;
+
+                if (timeLeftMs > 0) {
+                    setSubscriptionStatus({ daysLeft: null, expiresAt: null, isTrial: true });
+                    setTimeLeft(timeLeftMs);
+                } else {
+                    setSubscriptionStatus({ daysLeft: null, expiresAt: null, isTrial: true });
+                    setTimeLeft(0); // Trial expired
+                    clearInterval(timer);
+                }
+            } else {
+                // No subscription and no trial info (edge case)
+                setTimeLeft(0);
+                 setSubscriptionStatus({ daysLeft: null, expiresAt: null, isTrial: false });
+            }
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [session, libraryProfile]);
 
 
     useEffect(() => {
@@ -749,14 +795,28 @@ const App = () => {
         }
 
         const updates = { id: session.user.id, ...profileData, logo_url, updated_at: new Date() };
+
+        // ===== MODIFICATION: Set 7-day trial period on first profile creation =====
+        if (!libraryProfile) {
+            updates.trial_started_at = new Date().toISOString();
+            // Set expiry to 7 days from now
+            updates.trial_expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        }
+
         const { error } = await supabase.from('profiles').upsert(updates);
         if (error) throw error;
-        setLibraryProfile(prev => ({ ...prev, ...updates }));
+        // Re-fetch profile to get the new trial/subscription data
+        await fetchLibraryProfile(session.user);
         alert('Library profile saved successfully!');
     });
 
     const addStudent = (studentData, photoFile) => runAction(async () => {
         if (!session || !libraryProfile) throw new Error("You must be logged in and have a library profile.");
+        
+        if (!studentData.seatNumber || isNaN(parseInt(studentData.seatNumber, 10))) {
+            throw new Error("A valid seat number must be selected.");
+        }
+
         let photo_url = '';
         if (photoFile) {
             const fileExt = photoFile.name.split('.').pop();
@@ -770,15 +830,14 @@ const App = () => {
         if (rpcError) throw new Error(`Failed to generate Student ID: ${rpcError.message}`);
         const nextNumericId = (maxIdData || 0) + 1;
         const student_id = `${nextNumericId}`;
-        const fee_amount = feeStructure[studentData.admissionType];
+        const fee_amount = Number(feeStructure[studentData.admissionType]);
 
-        const admissionDateObj = new Date(studentData.admissionDate);
-        const initialDueDate = new Date(admissionDateObj);
-        initialDueDate.setMonth(initialDueDate.getMonth() + 1);
+        const initialDueDate = new Date(studentData.admissionDate);
 
         const newStudent = {
             user_id: session.user.id, student_id, title: studentData.title, name: studentData.name, father_name: studentData.fatherName,
-            mobile: studentData.mobile, admission_type: studentData.admissionType, shift: studentData.shift, seat_number: studentData.seatNumber,
+            mobile: studentData.mobile, admission_type: studentData.admissionType, shift: studentData.shift,
+            seat_number: parseInt(studentData.seatNumber, 10),
             photo_url, admission_date: studentData.admissionDate, next_due_date: initialDueDate.toISOString().split('T')[0], fee_amount,
             library_name: libraryProfile.library_name, library_reg_no: libraryProfile.reg_no, payment_history: [],
         };
@@ -922,15 +981,9 @@ const App = () => {
     const departedStudents = useMemo(() => students.filter(s => s.status === 'departed'), [students]);
     const totalIncome = useMemo(() => students.reduce((total, student) => total + (student.payment_history || []).reduce((sum, payment) => sum + (payment.amount || 0), 0), 0), [students]);
     const dashboardStats = useMemo(() => {
-        const today = getTodayDate();
-        const feesPending = activeStudents.filter(s => new Date(s.next_due_date) < today);
+        const feesPending = activeStudents.filter(s => isFeeDue(s.next_due_date));
         return { totalStudents: activeStudents.length, seatsOccupied: activeStudents.length, feesPendingList: feesPending, totalFeesPending: feesPending.reduce((acc, s) => acc + (s.fee_amount || 0), 0), };
     }, [activeStudents]);
-
-    const handleTrialEndLogout = () => {
-        setIsTrialEndModalOpen(false);
-        handleSignOut();
-    };
 
     const renderView = () => {
         switch (activeView) {
@@ -945,28 +998,32 @@ const App = () => {
             default: return <DashboardView stats={dashboardStats} activeStudents={activeStudents} onSearch={handleDashboardSearch} profile={dashboardProfile} onClearSearch={clearDashboardSearch} libraryName={libraryProfile?.library_name} />;
         }
     };
-
+    
+    // --- Render Logic ---
     if (loading) return <SplashScreen />;
     if (isUpdatingPassword) return <UpdatePassword />;
     if (!session) return <Auth />;
-
-    const isSubscribed = libraryProfile?.subscription_plan && (libraryProfile.subscription_plan === 'Lifetime' || (libraryProfile.subscription_expires_at && new Date(libraryProfile.subscription_expires_at) > new Date()));
-    const registrationTime = new Date(session.user.created_at).getTime();
-    const trialDuration = 5 * 60 * 1000;
-    const isTrialOver = new Date().getTime() > (registrationTime + trialDuration);
-
-    if (isTrialOver && !isSubscribed) {
-        if (!libraryProfile) { fetchLibraryProfile(session.user); return <SplashScreen />; }
-        return <SubscriptionScreen user={session.user} libraryProfile={libraryProfile} onSubscriptionSuccess={() => fetchLibraryProfile(session.user)} />;
-    }
-
     if (!session.user.user_metadata?.otp_verified) {
         return <OtpVerification user={session.user} />;
     }
-
     if (!libraryProfile) {
         return <LibrarySetupForm onSave={saveLibraryProfile} isSubmitting={isSubmitting} onBack={handleSignOut} />;
     }
+
+    // ===== MODIFICATION: Centralized access control based on Supabase profile data =====
+    const hasActiveSubscription = libraryProfile.subscription_plan && 
+        (libraryProfile.subscription_plan === 'Lifetime' || 
+        (libraryProfile.subscription_expires_at && new Date(libraryProfile.subscription_expires_at) > new Date()));
+
+    const hasActiveTrial = !hasActiveSubscription && libraryProfile.trial_expires_at && new Date(libraryProfile.trial_expires_at) > new Date();
+
+    const canAccessApp = hasActiveSubscription || hasActiveTrial;
+
+    if (!canAccessApp) {
+        // This will show if trial has expired and there's no active subscription.
+        return <SubscriptionScreen user={session.user} libraryProfile={libraryProfile} onSubscriptionSuccess={() => fetchLibraryProfile(session.user)} />;
+    }
+
 
     return (
         <>
@@ -984,7 +1041,7 @@ const App = () => {
                     <Header
                         userEmail={session.user.email}
                         libraryName={libraryProfile?.library_name}
-                        trialTimeLeft={trialTimeLeft}
+                        timeLeft={timeLeft}
                         subscriptionStatus={subscriptionStatus}
                         onMenuClick={() => setIsSidebarOpen(!isSidebarOpen)}
                     />
@@ -993,21 +1050,6 @@ const App = () => {
                     </div>
                 </main>
                 {isModalOpen && <ModalRouter isSubmitting={isSubmitting} content={modalContent} onClose={handleCloseModal} onOpenModal={handleOpenModal} students={students} seats={seats} feeStructure={feeStructure} onAddStudent={addStudent} onEditStudent={editStudent} onDeleteStudent={deleteStudent} onPayFee={handleFeePayment} onDepart={handleStudentDeparture} onReactivateStudent={handleReactivateStudent} libraryProfile={libraryProfile} onWhatsApp={handleWhatsAppMessage} onVerifyIncomePassword={handleVerifyIncomePassword} />}
-                {isTrialEndModalOpen && (
-                    <div className="fixed inset-0 bg-black bg-opacity-70 z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white p-8 rounded-lg shadow-xl text-center max-w-sm animate-fade-in-up">
-                            <AlertTriangle className="mx-auto h-12 w-12 text-yellow-500 mb-4" />
-                            <h2 className="text-2xl font-bold mb-2">Trial Period Ended</h2>
-                            <p className="text-gray-600 mb-6">Your 5-minute trial has finished. Please log out to subscribe and continue using the service.</p>
-                            <button
-                                onClick={handleTrialEndLogout}
-                                className="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition"
-                            >
-                                Logout & Subscribe
-                            </button>
-                        </div>
-                    </div>
-                )}
             </div>
         </>
     );
@@ -1060,7 +1102,7 @@ const LibrarySetupForm = ({ onSave, isSubmitting, onBack }) => {
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center p-4 transition-all duration-500">
             <div className="max-w-2xl w-full">
-                <div className="text-center mb-8"><BookOpen className="mx-auto h-12 w-auto text-indigo-600" /><h2 className="mt-6 text-3xl font-extrabold text-gray-900">Library Setup</h2><p className="mt-2 text-sm text-gray-600">Enter your library details to get started.</p></div>
+                <div className="text-center mb-8"><BookOpen className="mx-auto h-12 w-auto text-indigo-600" /><h2 className="mt-6 text-3xl font-extrabold text-gray-900">Library Setup</h2><p className="mt-2 text-sm text-gray-600">Enter your library details to get started and begin your 7-day trial.</p></div>
                 <div className="bg-white p-8 rounded-2xl shadow-lg">
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="flex flex-col items-center space-y-4"><label htmlFor="logo-upload" className="cursor-pointer"><div className="w-28 h-28 rounded-full bg-gray-100 border-2 border-dashed flex items-center justify-center text-gray-400 hover:bg-gray-200 hover:border-indigo-500 transition">{logoPreview ? <img src={logoPreview} alt="Logo Preview" className="w-full h-full rounded-full object-cover" /> : <UploadCloud size={40} />}</div></label><input id="logo-upload" type="file" className="hidden" accept="image/*" onChange={handleLogoChange} /><p className="text-sm text-gray-500">Upload your library logo</p></div>
@@ -1102,43 +1144,62 @@ const ModalRouter = ({ content, onClose, isSubmitting, ...props }) => {
 
 // --- UI & VIEW COMPONENTS ---
 const SplashScreen = () => (<div className="flex h-screen w-full items-center justify-center bg-indigo-600"><div className="text-center text-white animate-pulse"><BookOpen size={80} className="mx-auto mb-4" /><h1 className="text-5xl font-bold tracking-wider">Library MS</h1></div></div>);
-const Header = ({ userEmail, libraryName, trialTimeLeft, subscriptionStatus, onMenuClick }) => {
+const Header = ({ userEmail, libraryName, timeLeft, subscriptionStatus, onMenuClick }) => {
     const formatTime = (ms) => {
-        if (ms === null || ms <= 0) return null;
+        if (ms === null || ms <= 0) return "00:00:00";
+        
         const totalSeconds = Math.floor(ms / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
+        
+        if (subscriptionStatus.isTrial) {
+             return `${days}d ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        if (days > 0) return `${days} Day${days > 1 ? 's' : ''} Left`;
+        if (hours > 0) return `${hours} Hour${hours > 1 ? 's' : ''} Left`;
         return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     };
 
-    const timeLeftDisplay = formatTime(trialTimeLeft);
-    const { daysLeft, expiresAt } = subscriptionStatus;
-
-    const getSubscriptionPill = () => {
-        if (daysLeft === null || timeLeftDisplay) return null;
-
-        if (daysLeft === 'Lifetime') {
+    const getStatusPill = () => {
+        if (subscriptionStatus.daysLeft === 'Lifetime') {
             return (
-                <div className="hidden sm:flex items-center gap-2 bg-green-100 text-green-800 text-sm font-bold px-3 py-1.5 rounded-full">
+                <div className="hidden md:flex items-center gap-2 bg-green-100 text-green-800 text-sm font-bold px-3 py-1.5 rounded-full">
                     <ShieldCheck size={16} />
                     <span>Lifetime Access</span>
                 </div>
             );
         }
 
-        const bgColor = daysLeft > 7 ? 'bg-green-100' : 'bg-yellow-100';
-        const textColor = daysLeft > 7 ? 'text-green-800' : 'text-yellow-800';
-        const message = daysLeft > 0 ? `${daysLeft} Days Left` : 'Expired';
-
-        return (
-            <div className={`hidden sm:flex items-center gap-2 ${bgColor} ${textColor} text-sm font-bold px-3 py-1.5 rounded-full`}>
-                <CalendarClock size={16} />
-                <div className="flex flex-col text-left">
-                    <span className="font-semibold">{message}</span>
-                    {expiresAt && <span className="text-xs font-normal">Expires on {expiresAt}</span>}
+        if (subscriptionStatus.isTrial) {
+            return (
+                <div className="hidden md:flex items-center gap-2 bg-yellow-100 text-yellow-800 text-sm font-bold px-3 py-1 rounded-full animate-pulse">
+                    <CalendarClock size={16} />
+                    <span>Trial: {formatTime(timeLeft)}</span>
                 </div>
-            </div>
-        );
+            );
+        }
+        
+        if (subscriptionStatus.daysLeft !== null) {
+            const daysLeft = subscriptionStatus.daysLeft;
+            const bgColor = daysLeft > 7 ? 'bg-green-100' : daysLeft > 0 ? 'bg-yellow-100' : 'bg-red-100';
+            const textColor = daysLeft > 7 ? 'text-green-800' : daysLeft > 0 ? 'text-yellow-800' : 'text-red-800';
+            const message = daysLeft > 0 ? `${daysLeft} Day${daysLeft > 1 ? 's' : ''} Left` : 'Expired';
+
+            return (
+                <div className={`hidden md:flex items-center gap-2 ${bgColor} ${textColor} text-sm font-bold px-3 py-1.5 rounded-full`}>
+                    <CalendarClock size={16} />
+                    <div className="flex flex-col text-left">
+                        <span className="font-semibold">{message}</span>
+                        {subscriptionStatus.expiresAt && <span className="text-xs font-normal">Expires on {subscriptionStatus.expiresAt}</span>}
+                    </div>
+                </div>
+            );
+        }
+        
+        return null;
     };
 
     return (
@@ -1150,14 +1211,8 @@ const Header = ({ userEmail, libraryName, trialTimeLeft, subscriptionStatus, onM
                 <h2 className="text-xl md:text-2xl font-semibold text-gray-700 truncate">{libraryName || 'Library Management'}</h2>
             </div>
             <div className="flex items-center gap-4">
-                {timeLeftDisplay && (
-                    <div className="hidden sm:flex items-center gap-2 bg-yellow-100 text-yellow-800 text-sm font-bold px-3 py-1 rounded-full animate-pulse">
-                        <CalendarClock size={16} />
-                        <span>Trial Ends In: {timeLeftDisplay}</span>
-                    </div>
-                )}
-                {getSubscriptionPill()}
-                <div className="text-sm text-gray-600 hidden sm:block">{userEmail}</div>
+                {getStatusPill()}
+                <div className="text-sm text-gray-600 hidden md:block">{userEmail}</div>
             </div>
         </header>
     );
@@ -1165,14 +1220,14 @@ const Header = ({ userEmail, libraryName, trialTimeLeft, subscriptionStatus, onM
 
 const Sidebar = ({ setActiveView, activeView, onSignOut, libraryName, isSidebarOpen, setIsSidebarOpen }) => {
     const navItems = [{ id: 'dashboard', icon: <User size={20} />, label: 'Dashboard' }, { id: 'seats', icon: <Armchair size={20} />, label: 'Seat Matrix' }, { id: 'students', icon: <Users size={20} />, label: 'Students' }, { id: 'fees', icon: <DollarSign size={20} />, label: 'Fees' }, { id: 'reports', icon: <BookMarked size={20} />, label: 'Reports' }, { id: 'departures', icon: <History size={20} />, label: 'Departures' }, { id: 'settings', icon: <Settings size={20} />, label: 'Settings' }, { id: 'support', icon: <LifeBuoy size={20} />, label: 'Support' },];
-    
+
     const handleNavigation = (view) => {
         setActiveView(view);
         if (window.innerWidth < 1024) {
             setIsSidebarOpen(false);
         }
     };
-    
+
     return (
         <>
             <div className={`fixed lg:relative inset-0 z-40 lg:z-auto transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
@@ -1293,7 +1348,7 @@ const StudentProfileCard = ({ student, onClearSearch }) => {
             </div>
         );
     }
-    const isFeeDue = new Date(student.next_due_date) < getTodayDate();
+    const due = isFeeDue(student.next_due_date);
     return (
         <div className="bg-white p-6 rounded-lg shadow-xl animate-fade-in relative">
             <button onClick={onClearSearch} className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 transition-colors">
@@ -1309,8 +1364,8 @@ const StudentProfileCard = ({ student, onClearSearch }) => {
                         <span className="flex items-center gap-1"><Armchair size={16} /> Seat {student.seat_number}</span>
                     </div>
                 </div>
-                <div className={`p-4 rounded-lg text-center ${isFeeDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                    <p className="font-bold text-lg">{isFeeDue ? 'Fee Due' : 'Fee Paid'}</p>
+                <div className={`p-4 rounded-lg text-center ${due ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                    <p className="font-bold text-lg">{due ? 'Fee Due' : 'Fee Paid'}</p>
                     <p className="text-sm">Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p>
                 </div>
             </div>
@@ -1394,7 +1449,7 @@ const SeatMatrix = ({ seats, activeStudents, onSeatClick, onViewStudent, onViewS
                         <div className="flex items-center"><div className="w-4 h-4 rounded-sm mr-2" style={{ background: 'linear-gradient(to bottom, #9ca3af 50%, #e2e8f0 50%)' }}></div><span>Morning Occupied</span></div>
                         <div className="flex items-center"><div className="w-4 h-4 rounded-sm mr-2" style={{ background: 'linear-gradient(to top, #9ca3af 50%, #e2e8f0 50%)' }}></div><span>Evening Occupied</span></div>
                     </div>
-                    <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
+                    <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
                         {seats.map(seat => {
                             const state = getSeatState(seat);
                             return (
@@ -1474,9 +1529,9 @@ const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhat
             if (filters.studentStatus !== 'all' && s.status !== filters.studentStatus) return false;
             const query = filters.searchQuery.toLowerCase();
             if (query && !s.name.toLowerCase().includes(query) && !s.mobile?.includes(query) && !s.student_id.includes(query)) { return false; }
-            const isDue = new Date(s.next_due_date) < getTodayDate();
-            if (filters.feeStatus === 'due' && !isDue) return false;
-            if (filters.feeStatus === 'paid' && isDue) return false;
+            const due = isFeeDue(s.next_due_date);
+            if (filters.feeStatus === 'due' && !due) return false;
+            if (filters.feeStatus === 'paid' && due) return false;
             if (filters.shiftType !== 'all' && s.admission_type !== filters.shiftType) return false;
             const fromDate = filters.dateRange.from ? new Date(filters.dateRange.from) : null;
             const toDate = filters.dateRange.to ? new Date(filters.dateRange.to) : null;
@@ -1535,7 +1590,7 @@ const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhat
                         </thead>
                         <tbody>
                             {filteredStudents.length > 0 ? filteredStudents.map(s => {
-                                const isDue = new Date(s.next_due_date) < getTodayDate();
+                                const due = isFeeDue(s.next_due_date);
                                 const toDate = new Date(s.next_due_date);
                                 const fromDate = new Date(s.next_due_date);
                                 fromDate.setMonth(fromDate.getMonth() - 1);
@@ -1546,7 +1601,7 @@ const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhat
                                             <p className="text-xs text-gray-500 font-mono">Reg: {s.student_id}</p>
                                         </td>
                                         <td className="p-3 hidden sm:table-cell">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${s.status === 'departed' ? 'bg-gray-200 text-gray-700' : isDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{s.status === 'departed' ? 'Inactive' : isDue ? 'Due' : 'Paid'}</span>
+                                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${s.status === 'departed' ? 'bg-gray-200 text-gray-700' : due ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{s.status === 'departed' ? 'Inactive' : due ? 'Due' : 'Paid'}</span>
                                         </td>
                                         <td className="p-3 text-sm text-gray-600 hidden md:table-cell">{`${fromDate.toLocaleDateString()} to ${toDate.toLocaleDateString()}`}</td>
                                         <td className="p-3">
@@ -1554,9 +1609,9 @@ const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhat
                                                 {s.status === 'active' ? (
                                                     <>
                                                         <button onClick={() => onPayFee(s)} className="bg-blue-500 text-white px-3 py-1 text-xs rounded-md hover:bg-blue-600">Pay Fee</button>
-                                                        {!isDue && (<button onClick={() => onMarkAsDue(s.id)} className="bg-yellow-500 text-white px-3 py-1 text-xs rounded-md hover:bg-yellow-600 flex items-center gap-1" title="Mark fee as due immediately"><AlertTriangle size={14} /> Mark Due</button>)}
+                                                        {!due && (<button onClick={() => onMarkAsDue(s.id)} className="bg-yellow-500 text-white px-3 py-1 text-xs rounded-md hover:bg-yellow-600 flex items-center gap-1" title="Mark fee as due immediately"><AlertTriangle size={14} /> Mark Due</button>)}
                                                         <button onClick={() => onPrintReceipt(s)} className="bg-teal-500 text-white p-2 rounded-md hover:bg-teal-600 flex items-center gap-1" title="Print Receipt"><Printer size={14} /></button>
-                                                        <button onClick={() => onWhatsApp(s, isDue ? 'due' : 'paid')} className="bg-green-500 text-white p-2 rounded-md hover:bg-green-600 flex items-center gap-1" title="Send WhatsApp Message"><MessageSquare size={14} /></button>
+                                                        <button onClick={() => onWhatsApp(s, due ? 'due' : 'paid')} className="bg-green-500 text-white p-2 rounded-md hover:bg-green-600 flex items-center gap-1" title="Send WhatsApp Message"><MessageSquare size={14} /></button>
                                                     </>
                                                 ) : (
                                                     <button onClick={() => onReactivate(s)} className="bg-green-600 text-white px-3 py-1 text-xs rounded-md hover:bg-green-700 flex items-center gap-1" title="Reactivate Student"><UserCheck size={14} /> Reactivate</button>
@@ -1622,7 +1677,35 @@ const AddStudentForm = ({ onAddStudent, seats, prefill, feeStructure, isSubmitti
     const [formData, setFormData] = useState({ title: prefill?.gender === 'girl' ? 'Ms.' : 'Mr.', name: '', fatherName: '', mobile: '', admissionType: prefill?.prefillShift ? 'Half-time' : 'Full-time', seatNumber: prefill?.seatNumber || '', admissionDate: new Date().toISOString().split('T')[0], shift: prefill?.prefillShift || 'Morning' });
     const [photoFile, setPhotoFile] = useState(null); const [photoPreview, setPhotoPreview] = useState(null); const [error, setError] = useState('');
     const handleChange = (e) => { const { name, value } = e.target; const newFormData = { ...formData, [name]: value }; if (name === 'title') { newFormData.seatNumber = ''; } setFormData(newFormData); };
-    const handlePhotoChange = (e) => { if (e.target.files && e.target.files[0]) { const file = e.target.files[0]; setPhotoFile(file); setPhotoPreview(URL.createObjectURL(file)); } };
+    
+    // ===== MODIFICATION: Added automatic image compression on photo selection =====
+    const handlePhotoChange = async (e) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            setError(''); 
+
+            const options = {
+                maxSizeMB: 0.5, // Compress to under 500kb
+                maxWidthOrHeight: 1024,
+                useWebWorker: true,
+            };
+
+            try {
+                console.log(`Original file size: ${file.size / 1024 / 1024} MB`);
+                const compressedFile = await imageCompression(file, options);
+                console.log(`Compressed file size: ${compressedFile.size / 1024 / 1024} MB`);
+
+                setPhotoFile(compressedFile);
+                setPhotoPreview(URL.createObjectURL(compressedFile));
+            } catch (compressionError) {
+                console.error('Image compression error:', compressionError);
+                setError('Failed to process image. Please try a different photo.');
+                setPhotoFile(null);
+                setPhotoPreview(null);
+            }
+        }
+    };
+    
     const handleSubmit = (e) => { e.preventDefault(); setError(''); if (!photoFile) { setError('Photo is compulsory for admission.'); return; } const finalData = { ...formData }; if (finalData.admissionType === 'Full-time') { finalData.shift = null; } onAddStudent(finalData, photoFile); };
     const availableSeats = useMemo(() => {
         const studentGender = formData.title === 'Mr.' ? 'boy' : 'girl';
@@ -1633,7 +1716,7 @@ const AddStudentForm = ({ onAddStudent, seats, prefill, feeStructure, isSubmitti
             return false;
         });
     }, [seats, formData.title, formData.admissionType, formData.shift]);
-    return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-2xl font-semibold mb-6 text-gray-800">New Student Admission</h3><div className="flex items-center justify-center"><label htmlFor="photo-upload" className="cursor-pointer"><div className={`w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center border-2 border-dashed ${error ? 'border-red-500' : 'hover:border-indigo-500'}`}>{photoPreview ? <img src={photoPreview} alt="Preview" className="w-full h-full rounded-full object-cover" /> : <ImageIcon className="text-gray-400" size={40} />}</div></label><input id="photo-upload" type="file" className="hidden" accept="image/*" onChange={handlePhotoChange} /></div>{error && <p className="text-red-500 text-sm text-center">{error}</p>}<div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label>Title</label><select name="title" value={formData.title} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white"><option>Mr.</option><option>Ms.</option></select></div><div><label>Full Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Father/Husband Name</label><input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Mobile</label><input type="tel" name="mobile" value={formData.mobile} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Admission Date</label><input type="date" name="admissionDate" value={formData.admissionDate} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Admission Type</label><select name="admissionType" value={formData.admissionType} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" disabled={!!prefill?.prefillShift}><option value="Full-time">Full-time</option><option value="Half-time">Half-time</option></select></div>{formData.admissionType === 'Half-time' && (<div><label>Shift</label><select name="shift" value={formData.shift} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" disabled={!!prefill?.prefillShift}><option value="Morning">Morning</option><option value="Evening">Evening</option></select></div>)}<div className={formData.admissionType === 'Half-time' ? '' : 'md:col-span-2'}><label>Assign Seat</label><select name="seatNumber" value={formData.seatNumber} onChange={e => setFormData({ ...formData, seatNumber: parseInt(e.target.value) })} className="w-full p-2 border rounded-lg bg-white" required disabled={!!prefill?.seatNumber}><option value="">Select an available seat</option>{prefill?.seatNumber && <option value={prefill.seatNumber}>Seat {prefill.seatNumber}</option>}{!prefill?.seatNumber && availableSeats.map(s => <option key={s.number} value={s.number}>Seat {s.number}</option>)}</select></div></div><div className="p-4 bg-indigo-50 rounded-lg text-center"><h4 className="font-semibold text-indigo-800">Fee for {formData.admissionType}: <span className="font-bold">₹{feeStructure[formData.admissionType]}</span></h4></div><Button type="submit" disabled={isSubmitting} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700">{isSubmitting ? 'Saving...' : 'Confirm Admission'}</Button> </form>);
+    return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-2xl font-semibold mb-6 text-gray-800">New Student Admission</h3><div className="flex items-center justify-center"><label htmlFor="photo-upload" className="cursor-pointer"><div className={`w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center border-2 border-dashed ${error ? 'border-red-500' : 'hover:border-indigo-500'}`}>{photoPreview ? <img src={photoPreview} alt="Preview" className="w-full h-full rounded-full object-cover" /> : <ImageIcon className="text-gray-400" size={40} />}</div></label><input id="photo-upload" type="file" className="hidden" accept="image/*" onChange={handlePhotoChange} /></div>{error && <p className="text-red-500 text-sm text-center">{error}</p>}<div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label>Title</label><select name="title" value={formData.title} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white"><option>Mr.</option><option>Ms.</option></select></div><div><label>Full Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Father/Husband Name</label><input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Mobile</label><input type="tel" name="mobile" value={formData.mobile} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Admission Date</label><input type="date" name="admissionDate" value={formData.admissionDate} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Admission Type</label><select name="admissionType" value={formData.admissionType} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" disabled={!!prefill?.prefillShift}><option value="Full-time">Full-time</option><option value="Half-time">Half-time</option></select></div>{formData.admissionType === 'Half-time' && (<div><label>Shift</label><select name="shift" value={formData.shift} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" disabled={!!prefill?.prefillShift}><option value="Morning">Morning</option><option value="Evening">Evening</option></select></div>)}<div className={formData.admissionType === 'Half-time' ? '' : 'md:col-span-2'}><label>Assign Seat</label><select name="seatNumber" value={formData.seatNumber} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" required ><option value="">Select an available seat</option>{availableSeats.map(s => <option key={s.number} value={s.number}>Seat {s.number}</option>)}</select></div></div><div className="p-4 bg-indigo-50 rounded-lg text-center"><h4 className="font-semibold text-indigo-800">Fee for {formData.admissionType}: <span className="font-bold">₹{feeStructure[formData.admissionType]}</span></h4></div><Button type="submit" disabled={isSubmitting} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700">{isSubmitting ? 'Saving...' : 'Confirm Admission'}</Button> </form>);
 };
 const EditStudentForm = ({ student, onEditStudent, isSubmitting }) => {
     const [formData, setFormData] = useState({ name: student.name, mobile: student.mobile, father_name: student.father_name });
@@ -1675,18 +1758,18 @@ const PrintReceiptModal = ({ student, libraryProfile }) => {
     const receiptRef = useRef(); const lastPayment = student.payment_history?.length > 0 ? student.payment_history[student.payment_history.length - 1] : null; if (!lastPayment) { return (<div><h3 className="text-2xl font-semibold mb-4 text-gray-800">Print Fee Receipt</h3><div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert"><p className="font-bold">No Payment History</p><p>This student has not made any payments yet. No receipt can be generated.</p></div></div>); } const handlePrint = () => { const printContents = receiptRef.current.innerHTML; const originalContents = document.body.innerHTML; document.body.innerHTML = printContents; window.print(); document.body.innerHTML = originalContents; window.location.reload(); }; return (<div><h3 className="text-2xl font-semibold mb-4 text-gray-800">Print Fee Receipt</h3><FeeReceipt ref={receiptRef} student={student} libraryProfile={libraryProfile} payment={lastPayment} /><Button onClick={handlePrint} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700 no-print"><Printer size={20} className="mr-2" /> Print Receipt</Button></div>);
 };
 const DashboardCharts = ({ students }) => {
-    const monthlyAdmissionsData = useMemo(() => { const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]; const admissions = {}; for (let i = 5; i >= 0; i--) { const d = new Date(); d.setMonth(d.getMonth() - i); const monthKey = `${monthNames[d.getMonth()]} ${d.getFullYear()}`; admissions[monthKey] = 0; } students.forEach(student => { const admissionDate = new Date(student.admission_date); const monthKey = `${monthNames[admissionDate.getMonth()]} ${admissionDate.getFullYear()}`; if (admissions.hasOwnProperty(monthKey)) { admissions[monthKey]++; } }); return Object.keys(admissions).map(key => ({ month: key, Admissions: admissions[key] })); }, [students]); const feeStatusData = useMemo(() => { let paid = 0, due = 0; const today = getTodayDate(); students.forEach(s => { if (new Date(s.next_due_date) < today) { due++; } else { paid++; } }); return [{ name: 'Paid', value: paid }, { name: 'Due', value: due }]; }, [students]); const COLORS = ['#10B981', '#EF4444'];
+    const monthlyAdmissionsData = useMemo(() => { const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]; const admissions = {}; for (let i = 5; i >= 0; i--) { const d = new Date(); d.setMonth(d.getMonth() - i); const monthKey = `${monthNames[d.getMonth()]} ${d.getFullYear()}`; admissions[monthKey] = 0; } students.forEach(student => { const admissionDate = new Date(student.admission_date); const monthKey = `${monthNames[admissionDate.getMonth()]} ${admissionDate.getFullYear()}`; if (admissions.hasOwnProperty(monthKey)) { admissions[monthKey]++; } }); return Object.keys(admissions).map(key => ({ month: key, Admissions: admissions[key] })); }, [students]); const feeStatusData = useMemo(() => { let paid = 0, due = 0; students.forEach(s => { if (isFeeDue(s.next_due_date)) { due++; } else { paid++; } }); return [{ name: 'Paid', value: paid }, { name: 'Due', value: due }]; }, [students]); const COLORS = ['#10B981', '#EF4444'];
     return (<div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6"><div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Monthly Admissions</h4><ResponsiveContainer width="100%" height={300}><BarChart data={monthlyAdmissionsData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" /><YAxis /><Tooltip /><Legend /><Bar dataKey="Admissions" fill="#8884d8" /></BarChart></ResponsiveContainer></div><div className="bg-white p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Fee Status Overview</h4><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={feeStatusData} cx="50%" cy="50%" labelLine={false} outerRadius={80} fill="#8884d8" dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{feeStatusData.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div></div>);
 };
 const ReportsView = ({ students }) => {
     const initialFilters = { dateRange: { from: '', to: '' }, feeStatus: 'all', shiftType: 'all', studentStatus: 'active', dateFilterType: 'admission_date', }; const [filters, setFilters] = useState(initialFilters); const handleFilterChange = (e) => { const { name, value } = e.target; setFilters(prev => ({ ...prev, [name]: value })); }; const handleDateChange = (e) => { const { name, value } = e.target; setFilters(prev => ({ ...prev, dateRange: { ...prev.dateRange, [name]: value } })); }; const resetFilters = () => { setFilters(initialFilters); };
-    const filteredStudents = useMemo(() => { return students.filter(s => { if (filters.studentStatus !== 'all' && s.status !== filters.studentStatus) return false; const isDue = new Date(s.next_due_date) < getTodayDate(); if (filters.feeStatus === 'due' && !isDue) return false; if (filters.feeStatus === 'paid' && isDue) return false; if (filters.shiftType !== 'all' && s.admission_type !== filters.shiftType) return false; const fromDate = filters.dateRange.from ? new Date(filters.dateRange.from) : null; const toDate = filters.dateRange.to ? new Date(filters.dateRange.to) : null; if (fromDate || toDate) { const studentDate = new Date(s[filters.dateFilterType]); if (fromDate && studentDate < fromDate) return false; if (toDate) { const endOfDay = new Date(toDate); endOfDay.setHours(23, 59, 59, 999); if (studentDate > endOfDay) return false; } } return true; }); }, [students, filters]);
-    const downloadCSV = () => { const headers = ["Reg. No.", "Student Name", "Father's Name", "Mobile No.", "Seat No.", "Admission Type", "Shift", "Admission Date", "Next Due Date", "Fee Amount", "Fee Status", "Student Status"]; const rows = filteredStudents.map(s => { const isDue = new Date(s.next_due_date) < getTodayDate(); const feeStatus = s.status === 'departed' ? 'N/A' : (isDue ? 'Due' : 'Paid'); const escape = (str) => `"${String(str || '').replace(/"/g, '""')}"`; return [escape(s.student_id), escape(s.name), escape(s.father_name), escape(s.mobile), escape(s.seat_number), escape(s.admission_type), escape(s.shift || 'N/A'), escape(new Date(s.admission_date).toLocaleDateString('en-GB')), escape(new Date(s.next_due_date).toLocaleDateString('en-GB')), escape(s.fee_amount), escape(feeStatus), escape(s.status.charAt(0).toUpperCase() + s.status.slice(1))].join(','); }); const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n'); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); const todayStr = new Date().toISOString().split('T')[0]; link.setAttribute("download", `library_report_${todayStr}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
-    return (<div className="space-y-6"><div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6"><h3 className="text-2xl font-semibold text-gray-800">Student Reports & Filtering</h3><div className="flex items-center gap-2 w-full md:w-auto"><Button onClick={resetFilters} className="bg-gray-200 text-gray-700 hover:bg-gray-300 w-1/2 md:w-auto"><FilterX size={16} className="mr-2" /> Reset</Button><Button onClick={downloadCSV} className="bg-indigo-600 text-white hover:bg-indigo-700 w-1/2 md:w-auto"><Download size={16} className="mr-2" /> Download CSV</Button></div></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div className="p-4 border rounded-lg bg-gray-50 md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-2">Filter by Date Range</label><div className="flex flex-col sm:flex-row gap-2"><select name="dateFilterType" value={filters.dateFilterType} onChange={handleFilterChange} className="p-2 border border-gray-300 rounded-lg bg-white w-full sm:w-1/3"><option value="admission_date">Admission Date</option><option value="next_due_date">Next Due Date</option></select><input type="date" name="from" value={filters.dateRange.from} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg w-full sm:w-1/3" /><input type="date" name="to" value={filters.dateRange.to} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg w-full sm:w-1/3" /></div></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Fee Status</label><select name="feeStatus" value={filters.feeStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Fee Status</option><option value="paid">Paid</option><option value="due">Due</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Admission Type</label><select name="shiftType" value={filters.shiftType} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Types</option><option value="Full-time">Full-time</option><option value="Half-time">Half-time</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Student Status</label><select name="studentStatus" value={filters.studentStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="active">Active</option><option value="departed">Departed</option><option value="all">All Students</option></select></div></div></div><div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Filtered Results <span className="text-indigo-600 font-bold">({filteredStudents.length} students found)</span></h4><div className="overflow-auto max-h-[60vh] styled-scrollbar"><table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-gray-100 text-gray-600 uppercase sticky top-0"><tr><th className="p-3">Reg. No</th><th className="p-3">Name</th><th className="p-3 hidden md:table-cell">Father's Name</th><th className="p-3 hidden sm:table-cell">Mobile</th><th className="p-3">Seat</th><th className="p-3 hidden lg:table-cell">Shift</th><th className="p-3 hidden lg:table-cell">Admission Date</th><th className="p-3 hidden sm:table-cell">Next Due Date</th><th className="p-3">Fee Status</th></tr></thead><tbody>{filteredStudents.length > 0 ? filteredStudents.map(s => { const isDue = new Date(s.next_due_date) < getTodayDate(); const isDeparted = s.status === 'departed'; return (<tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{s.student_id}</td><td className="p-3 font-medium text-gray-800">{s.name}</td><td className="p-3 hidden md:table-cell">{s.father_name}</td><td className="p-3 hidden sm:table-cell">{s.mobile}</td><td className="p-3">{s.seat_number}</td><td className="p-3 hidden lg:table-cell">{s.admission_type === 'Full-time' ? 'Full Day' : s.shift}</td><td className="p-3 hidden lg:table-cell">{new Date(s.admission_date).toLocaleDateString()}</td><td className="p-3 hidden sm:table-cell">{new Date(s.next_due_date).toLocaleDateString()}</td><td className="p-3"><span className={`px-3 py-1 rounded-full font-semibold text-xs ${isDeparted ? 'bg-gray-200 text-gray-800' : isDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{isDeparted ? 'Departed' : (isDue ? 'Due' : 'Paid')}</span></td></tr>) }) : (<tr><td colSpan="9" className="text-center p-8 text-gray-500">No students match the current filters. <br /> Try adjusting your search criteria.</td></tr>)}</tbody></table></div></div></div>);
+    const filteredStudents = useMemo(() => { return students.filter(s => { if (filters.studentStatus !== 'all' && s.status !== filters.studentStatus) return false; const due = isFeeDue(s.next_due_date); if (filters.feeStatus === 'due' && !due) return false; if (filters.feeStatus === 'paid' && due) return false; if (filters.shiftType !== 'all' && s.admission_type !== filters.shiftType) return false; const fromDate = filters.dateRange.from ? new Date(filters.dateRange.from) : null; const toDate = filters.dateRange.to ? new Date(filters.dateRange.to) : null; if (fromDate || toDate) { const studentDate = new Date(s[filters.dateFilterType]); if (fromDate && studentDate < fromDate) return false; if (toDate) { const endOfDay = new Date(toDate); endOfDay.setHours(23, 59, 59, 999); if (studentDate > endOfDay) return false; } } return true; }); }, [students, filters]);
+    const downloadCSV = () => { const headers = ["Reg. No.", "Student Name", "Father's Name", "Mobile No.", "Seat No.", "Admission Type", "Shift", "Admission Date", "Next Due Date", "Fee Amount", "Fee Status", "Student Status"]; const rows = filteredStudents.map(s => { const due = isFeeDue(s.next_due_date); const feeStatus = s.status === 'departed' ? 'N/A' : (due ? 'Due' : 'Paid'); const escape = (str) => `"${String(str || '').replace(/"/g, '""')}"`; return [escape(s.student_id), escape(s.name), escape(s.father_name), escape(s.mobile), escape(s.seat_number), escape(s.admission_type), escape(s.shift || 'N/A'), escape(new Date(s.admission_date).toLocaleDateString('en-GB')), escape(new Date(s.next_due_date).toLocaleDateString('en-GB')), escape(s.fee_amount), escape(feeStatus), escape(s.status.charAt(0).toUpperCase() + s.status.slice(1))].join(','); }); const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n'); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); const todayStr = new Date().toISOString().split('T')[0]; link.setAttribute("download", `library_report_${todayStr}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+    return (<div className="space-y-6"><div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6"><h3 className="text-2xl font-semibold text-gray-800">Student Reports & Filtering</h3><div className="flex items-center gap-2 w-full md:w-auto"><Button onClick={resetFilters} className="bg-gray-200 text-gray-700 hover:bg-gray-300 w-1/2 md:w-auto"><FilterX size={16} className="mr-2" /> Reset</Button><Button onClick={downloadCSV} className="bg-indigo-600 text-white hover:bg-indigo-700 w-1/2 md:w-auto"><Download size={16} className="mr-2" /> Download CSV</Button></div></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div className="p-4 border rounded-lg bg-gray-50 md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-2">Filter by Date Range</label><div className="flex flex-col sm:flex-row gap-2"><select name="dateFilterType" value={filters.dateFilterType} onChange={handleFilterChange} className="p-2 border border-gray-300 rounded-lg bg-white w-full sm:w-1/3"><option value="admission_date">Admission Date</option><option value="next_due_date">Next Due Date</option></select><input type="date" name="from" value={filters.dateRange.from} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg w-full sm:w-1/3" /><input type="date" name="to" value={filters.dateRange.to} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg w-full sm:w-1/3" /></div></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Fee Status</label><select name="feeStatus" value={filters.feeStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Fee Status</option><option value="paid">Paid</option><option value="due">Due</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Admission Type</label><select name="shiftType" value={filters.shiftType} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Types</option><option value="Full-time">Full-time</option><option value="Half-time">Half-time</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Student Status</label><select name="studentStatus" value={filters.studentStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="active">Active</option><option value="departed">Departed</option><option value="all">All Students</option></select></div></div></div><div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Filtered Results <span className="text-indigo-600 font-bold">({filteredStudents.length} students found)</span></h4><div className="overflow-auto max-h-[60vh] styled-scrollbar"><table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-gray-100 text-gray-600 uppercase sticky top-0"><tr><th className="p-3">Reg. No</th><th className="p-3">Name</th><th className="p-3 hidden md:table-cell">Father's Name</th><th className="p-3 hidden sm:table-cell">Mobile</th><th className="p-3">Seat</th><th className="p-3 hidden lg:table-cell">Shift</th><th className="p-3 hidden lg:table-cell">Admission Date</th><th className="p-3 hidden sm:table-cell">Next Due Date</th><th className="p-3">Fee Status</th></tr></thead><tbody>{filteredStudents.length > 0 ? filteredStudents.map(s => { const due = isFeeDue(s.next_due_date); const isDeparted = s.status === 'departed'; return (<tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{s.student_id}</td><td className="p-3 font-medium text-gray-800">{s.name}</td><td className="p-3 hidden md:table-cell">{s.father_name}</td><td className="p-3 hidden sm:table-cell">{s.mobile}</td><td className="p-3">{s.seat_number}</td><td className="p-3 hidden lg:table-cell">{s.admission_type === 'Full-time' ? 'Full Day' : s.shift}</td><td className="p-3 hidden lg:table-cell">{new Date(s.admission_date).toLocaleDateString()}</td><td className="p-3 hidden sm:table-cell">{new Date(s.next_due_date).toLocaleDateString()}</td><td className="p-3"><span className={`px-3 py-1 rounded-full font-semibold text-xs ${isDeparted ? 'bg-gray-200 text-gray-800' : due ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{isDeparted ? 'Departed' : (due ? 'Due' : 'Paid')}</span></td></tr>) }) : (<tr><td colSpan="9" className="text-center p-8 text-gray-500">No students match the current filters. <br /> Try adjusting your search criteria.</td></tr>)}</tbody></table></div></div></div>);
 };
 const StudentProfileDetailModal = ({ student }) => {
-    const isFeeDue = new Date(student.next_due_date) < getTodayDate(); const monthsPaidInAdvance = useMemo(() => { const today = new Date(); const nextDueDate = new Date(student.next_due_date); if (nextDueDate <= today) return 0; let months = (nextDueDate.getFullYear() - today.getFullYear()) * 12; months -= today.getMonth(); months += nextDueDate.getMonth(); return months <= 0 ? 0 : months; }, [student.next_due_date]);
-    return (<div className="p-2"><div className="flex flex-col md:flex-row items-center gap-6 border-b pb-6 mb-6"><img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-32 h-32 rounded-full object-cover border-4 border-indigo-200 shadow-lg" /><div className="flex-1 text-center md:text-left"><h2 className="text-3xl font-bold text-gray-800">{student.title} {student.name}</h2><p className="text-indigo-600 font-mono">Reg. No: {student.student_id}</p><div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-4 mt-2 text-gray-600"><span className="flex items-center gap-1"><Phone size={16} /> {student.mobile}</span><span className="flex items-center gap-1"><Armchair size={16} /> Seat {student.seat_number}</span></div></div><div className={`p-4 rounded-lg text-center ${isFeeDue ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}><p className="font-bold text-lg">{isFeeDue ? 'Fee Due' : 'Fee Paid'}</p><p className="text-sm">Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p>{monthsPaidInAdvance > 0 && <p className="text-xs font-semibold mt-1">({monthsPaidInAdvance} Month(s) Advance)</p>}</div></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-6"><div className="bg-gray-50 p-4 rounded-lg"><h4 className="font-bold text-gray-600 mb-2">Personal Details</h4><p><span className="font-semibold">Father's Name:</span> {student.father_name}</p><p><span className="font-semibold">Admission Date:</span> {new Date(student.admission_date).toLocaleDateString()}</p></div><div className="bg-gray-50 p-4 rounded-lg"><h4 className="font-bold text-gray-600 mb-2">Subscription Details</h4><p><span className="font-semibold">Admission Type:</span> {student.admission_type}</p><p><span className="font-semibold">Shift:</span> {student.admission_type === 'Full-time' ? 'Full Day' : student.shift}</p><p><span className="font-semibold">Fee Amount:</span> ₹{student.fee_amount}</p></div></div><div><h4 className="font-bold text-gray-600 mb-2">Payment History</h4><div className="max-h-48 overflow-y-auto border rounded-lg styled-scrollbar"><table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-2">Date</th><th className="p-2">Amount</th><th className="p-2">Method</th></tr></thead><tbody>{student.payment_history && student.payment_history.length > 0 ? (student.payment_history.map((p, i) => (<tr key={i} className="border-b"><td className="p-2">{new Date(p.date).toLocaleDateString()}</td><td className="p-2 font-semibold">₹{p.amount}</td><td className="p-2"><span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{p.method}</span></td></tr>))) : (<tr><td colSpan="3" className="text-center p-4 text-gray-500">No payment history found.</td></tr>)}</tbody></table></div></div></div>);
+    const due = isFeeDue(student.next_due_date); const monthsPaidInAdvance = useMemo(() => { const today = new Date(); const nextDueDate = new Date(student.next_due_date); if (nextDueDate <= today) return 0; let months = (nextDueDate.getFullYear() - today.getFullYear()) * 12; months -= today.getMonth(); months += nextDueDate.getMonth(); return months <= 0 ? 0 : months; }, [student.next_due_date]);
+    return (<div className="p-2"><div className="flex flex-col md:flex-row items-center gap-6 border-b pb-6 mb-6"><img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-32 h-32 rounded-full object-cover border-4 border-indigo-200 shadow-lg" /><div className="flex-1 text-center md:text-left"><h2 className="text-3xl font-bold text-gray-800">{student.title} {student.name}</h2><p className="text-indigo-600 font-mono">Reg. No: {student.student_id}</p><div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-4 mt-2 text-gray-600"><span className="flex items-center gap-1"><Phone size={16} /> {student.mobile}</span><span className="flex items-center gap-1"><Armchair size={16} /> Seat {student.seat_number}</span></div></div><div className={`p-4 rounded-lg text-center ${due ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}><p className="font-bold text-lg">{due ? 'Fee Due' : 'Fee Paid'}</p><p className="text-sm">Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p>{monthsPaidInAdvance > 0 && <p className="text-xs font-semibold mt-1">({monthsPaidInAdvance} Month(s) Advance)</p>}</div></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-6"><div className="bg-gray-50 p-4 rounded-lg"><h4 className="font-bold text-gray-600 mb-2">Personal Details</h4><p><span className="font-semibold">Father's Name:</span> {student.father_name}</p><p><span className="font-semibold">Admission Date:</span> {new Date(student.admission_date).toLocaleDateString()}</p></div><div className="bg-gray-50 p-4 rounded-lg"><h4 className="font-bold text-gray-600 mb-2">Subscription Details</h4><p><span className="font-semibold">Admission Type:</span> {student.admission_type}</p><p><span className="font-semibold">Shift:</span> {student.admission_type === 'Full-time' ? 'Full Day' : student.shift}</p><p><span className="font-semibold">Fee Amount:</span> ₹{student.fee_amount}</p></div></div><div><h4 className="font-bold text-gray-600 mb-2">Payment History</h4><div className="max-h-48 overflow-y-auto border rounded-lg styled-scrollbar"><table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-2">Date</th><th className="p-2">Amount</th><th className="p-2">Method</th></tr></thead><tbody>{student.payment_history && student.payment_history.length > 0 ? (student.payment_history.map((p, i) => (<tr key={i} className="border-b"><td className="p-2">{new Date(p.date).toLocaleDateString()}</td><td className="p-2 font-semibold">₹{p.amount}</td><td className="p-2"><span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{p.method}</span></td></tr>))) : (<tr><td colSpan="3" className="text-center p-4 text-gray-500">No payment history found.</td></tr>)}</tbody></table></div></div></div>);
 };
 const SeatOccupantsDetailModal = ({ item, onViewFullProfile }) => {
     const { occupants, seatNumber } = item;

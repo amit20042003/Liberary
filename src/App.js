@@ -4,10 +4,6 @@ import {
     Phone, Image as ImageIcon, Settings, LogOut, CheckCircle, Edit, Trash2, Eye, History, BookMarked, Loader2, Printer, UploadCloud, ArrowLeft, XCircle, Mail, Lock, Download, FilterX, Sun, Moon, MessageSquare, UserX, UserCheck, KeyRound, EyeOff, TrendingUp, LifeBuoy, ShieldCheck, CalendarClock, Menu
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-// ===== FIX: Replaced package imports with CDN links to resolve compilation errors =====
-// import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
-// import imageCompression from 'https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/+esm';
-
 import { createClient } from '@supabase/supabase-js';
 import imageCompression from 'browser-image-compression';
 
@@ -374,17 +370,17 @@ const Auth = () => {
             <div className="w-full max-w-md z-20">
                 <div className="text-center mb-8 animate-fade-in-down" style={{ animationDuration: '1s' }}>
                     <BookOpen className="mx-auto h-16 w-auto text-white drop-shadow-lg" />
-                    <h2 className="mt-6 text-4xl font-extrabold text-white tracking-tight" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
+                    <h2 className="mt-6 text-3xl md:text-4xl font-extrabold text-white tracking-tight" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
                         Library Management
                     </h2>
-                    <p className="mt-2 text-lg text-gray-300">
+                    <p className="mt-2 text-md md:text-lg text-gray-300">
                         {authView === 'signIn' && 'Your digital library assistant'}
                         {authView === 'signUp' && 'Create your account'}
                         {authView === 'forgotPassword' && 'Reset your password'}
                     </p>
                 </div>
 
-                <div className="bg-white bg-opacity-10 backdrop-blur-xl p-8 rounded-2xl shadow-2xl animate-fade-in-up" style={{ animationDuration: '1s' }}>
+                <div className="bg-white bg-opacity-10 backdrop-blur-xl p-6 md:p-8 rounded-2xl shadow-2xl animate-fade-in-up" style={{ animationDuration: '1s' }}>
                     {renderForm()}
                     <p className="mt-6 text-center text-sm text-gray-300">
                         {authView === 'signIn' && "Don't have an account? "}
@@ -484,7 +480,6 @@ const SubscriptionScreen = ({ user, libraryProfile, onSubscriptionSuccess }) => 
             expires_at.setDate(expires_at.getDate() + planDetails.duration_days);
         }
         
-        // ===== MODIFICATION: Store subscription start and end dates in Supabase =====
         const subscriptionStartDate = new Date().toISOString();
         const subscriptionExpiresDate = expires_at ? expires_at.toISOString() : null;
 
@@ -523,10 +518,10 @@ const SubscriptionScreen = ({ user, libraryProfile, onSubscriptionSuccess }) => 
         <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4 text-white">
             <div className="w-full max-w-2xl text-center">
                 <ShieldCheck className="mx-auto h-16 w-auto text-indigo-400 mb-4" />
-                <h1 className="text-4xl font-extrabold tracking-tight mb-2">Activate Your Subscription</h1>
+                <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-2">Activate Your Subscription</h1>
                 <p className="text-lg text-gray-400 mb-8">Your access has expired. Please choose a plan to continue.</p>
 
-                <div className="bg-gray-800 p-8 rounded-2xl shadow-2xl">
+                <div className="bg-gray-800 p-6 md:p-8 rounded-2xl shadow-2xl">
                     {!selectedPlan ? (
                         <>
                             <h2 className="text-2xl font-bold mb-6">Choose Your Plan</h2>
@@ -693,7 +688,6 @@ const App = () => {
         return () => subscription.unsubscribe();
     }, [fetchLibraryProfile, fetchStudents]);
 
-    // ===== MODIFICATION: Centralized timer and status check based on Supabase profile data =====
     useEffect(() => {
         if (!session?.user || !libraryProfile) {
             setTimeLeft(null);
@@ -704,7 +698,6 @@ const App = () => {
         const timer = setInterval(() => {
             const now = new Date().getTime();
 
-            // Check for active subscription first
             if (libraryProfile.subscription_plan) {
                 if (libraryProfile.subscription_plan === 'Lifetime') {
                     setSubscriptionStatus({ daysLeft: 'Lifetime', expiresAt: null, isTrial: false });
@@ -725,7 +718,6 @@ const App = () => {
                         });
                         setTimeLeft(diffTime);
                     } else {
-                        // Subscription expired
                         setSubscriptionStatus({
                             daysLeft: 0,
                             expiresAt: new Date(libraryProfile.subscription_expires_at).toLocaleDateString(),
@@ -735,7 +727,6 @@ const App = () => {
                     }
                 }
             }
-            // If no subscription, check for trial
             else if (libraryProfile.trial_expires_at) {
                 const trialEndTime = new Date(libraryProfile.trial_expires_at).getTime();
                 const timeLeftMs = trialEndTime - now;
@@ -745,11 +736,10 @@ const App = () => {
                     setTimeLeft(timeLeftMs);
                 } else {
                     setSubscriptionStatus({ daysLeft: null, expiresAt: null, isTrial: true });
-                    setTimeLeft(0); // Trial expired
+                    setTimeLeft(0); 
                     clearInterval(timer);
                 }
             } else {
-                // No subscription and no trial info (edge case)
                 setTimeLeft(0);
                  setSubscriptionStatus({ daysLeft: null, expiresAt: null, isTrial: false });
             }
@@ -784,7 +774,7 @@ const App = () => {
         finally { setIsSubmitting(false); }
     };
 
-    const saveLibraryProfile = (profileData, logoFile) => runAction(async () => {
+    const saveLibraryProfile = useCallback((profileData, logoFile) => runAction(async () => {
         if (!session) throw new Error("You must be logged in.");
         let logo_url = libraryProfile?.logo_url || '';
 
@@ -799,21 +789,25 @@ const App = () => {
 
         const updates = { id: session.user.id, ...profileData, logo_url, updated_at: new Date() };
 
-        // ===== MODIFICATION: Set 7-day trial period on first profile creation =====
         if (!libraryProfile) {
             updates.trial_started_at = new Date().toISOString();
-            // Set expiry to 7 days from now
             updates.trial_expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
         }
 
         const { error } = await supabase.from('profiles').upsert(updates);
         if (error) throw error;
-        // Re-fetch profile to get the new trial/subscription data
         await fetchLibraryProfile(session.user);
         alert('Library profile saved successfully!');
-    });
+    }), [session, libraryProfile, fetchLibraryProfile]);
 
-    const addStudent = (studentData, photoFile) => runAction(async () => {
+    const handleCloseModal = useCallback(() => { 
+        if (!isSubmitting) { 
+            setIsModalOpen(false); 
+            setModalContent({ type: '', item: null }); 
+        } 
+    }, [isSubmitting]);
+    
+    const addStudent = useCallback((studentData, photoFile) => runAction(async () => {
         if (!session || !libraryProfile) throw new Error("You must be logged in and have a library profile.");
         
         if (!studentData.seatNumber || isNaN(parseInt(studentData.seatNumber, 10))) {
@@ -849,17 +843,17 @@ const App = () => {
         await fetchStudents(session.user);
         handleCloseModal();
         alert('Student added successfully!');
-    });
+    }), [session, libraryProfile, feeStructure, fetchStudents, handleCloseModal]);
 
-    const editStudent = (studentDBId, updatedData) => runAction(async () => {
+    const editStudent = useCallback((studentDBId, updatedData) => runAction(async () => {
         const { error } = await supabase.from('students').update(updatedData).eq('id', studentDBId);
         if (error) throw error;
         await fetchStudents(session.user);
         handleCloseModal();
         alert('Student updated successfully!');
-    });
+    }), [fetchStudents, session, handleCloseModal]);
 
-    const deleteStudent = (student) => runAction(async () => {
+    const deleteStudent = useCallback((student) => runAction(async () => {
         if (student.photo_url) {
             const photoPath = student.photo_url.split('/student-photos/')[1];
             if (photoPath) await supabase.storage.from('student-photos').remove([photoPath]);
@@ -869,9 +863,9 @@ const App = () => {
         await fetchStudents(session.user);
         handleCloseModal();
         alert(`${student.name} was deleted successfully.`);
-    });
+    }), [fetchStudents, session, handleCloseModal]);
 
-    const handleFeePayment = (studentId, paymentDetails, months) => runAction(async () => {
+    const handleFeePayment = useCallback((studentId, paymentDetails, months) => runAction(async () => {
         const student = students.find(s => s.id === studentId);
         if (!student) throw new Error("Student not found.");
         const newHistory = [...(student.payment_history || [])];
@@ -885,9 +879,9 @@ const App = () => {
         await fetchStudents(session.user);
         handleCloseModal();
         alert(`Payment confirmed for ${months} month(s)!`);
-    });
+    }), [students, fetchStudents, session, handleCloseModal]);
 
-    const handleMarkAsDue = (studentId) => runAction(async () => {
+    const handleMarkAsDue = useCallback((studentId) => runAction(async () => {
         const student = students.find(s => s.id === studentId);
         if (!student) throw new Error("Student not found.");
         const yesterday = new Date();
@@ -896,9 +890,9 @@ const App = () => {
         if (error) throw error;
         await fetchStudents(session.user);
         alert(`${student.name}'s fee has been marked as Due.`);
-    });
+    }), [students, fetchStudents, session]);
 
-    const handleStudentDeparture = (studentDBId, transferTargetDBId, reason) => runAction(async () => {
+    const handleStudentDeparture = useCallback((studentDBId, transferTargetDBId, reason) => runAction(async () => {
         const departingStudent = students.find(s => s.id === studentDBId);
         if (!departingStudent) throw new Error("Departing student not found.");
         const today = new Date();
@@ -923,9 +917,9 @@ const App = () => {
         await fetchStudents(session.user);
         handleCloseModal();
         alert('Student departure recorded.');
-    });
+    }), [students, fetchStudents, session, handleCloseModal]);
 
-    const handleReactivateStudent = (studentId, newSeatNumber) => runAction(async () => {
+    const handleReactivateStudent = useCallback((studentId, newSeatNumber) => runAction(async () => {
         const student = students.find(s => s.id === studentId);
         if (!student) throw new Error("Student not found.");
         const updates = { status: 'active', seat_number: newSeatNumber, departure_date: null, departure_reason: null, transfer_log: null, };
@@ -934,30 +928,29 @@ const App = () => {
         await fetchStudents(session.user);
         handleCloseModal();
         alert(`${student.name} has been reactivated successfully!`);
-    });
+    }), [students, fetchStudents, session, handleCloseModal]);
 
-    const handleDashboardSearch = (query) => {
+    const handleDashboardSearch = useCallback((query) => {
         if (!query) { setDashboardProfile(null); return; }
         const lowerQuery = query.toLowerCase();
         const found = students.find(s => s.name.toLowerCase().includes(lowerQuery) || s.mobile?.includes(lowerQuery) || s.student_id.toLowerCase() === lowerQuery);
         setDashboardProfile(found || { notFound: true });
-    };
+    }, [students]);
 
-    const clearDashboardSearch = () => {
+    const clearDashboardSearch = useCallback(() => {
         setDashboardProfile(null);
-    };
+    }, []);
 
     const handleOpenModal = useCallback((type, item = null) => { setModalContent({ type, item }); setIsModalOpen(true); }, []);
-    const handleCloseModal = () => { if (!isSubmitting) { setIsModalOpen(false); setModalContent({ type: '', item: null }); } };
-
-    const handleVerifyIncomePassword = (password) => runAction(async () => {
+    
+    const handleVerifyIncomePassword = useCallback((password) => runAction(async () => {
         const { error } = await supabase.auth.signInWithPassword({ email: session.user.email, password });
         if (error) { throw new Error("Incorrect password. Please try again."); }
         setIsIncomeVisible(true);
         handleCloseModal();
-    });
+    }), [session, handleCloseModal]);
 
-    const handleWhatsAppMessage = (student, type) => {
+    const handleWhatsAppMessage = useCallback((student, type) => {
         if (!student.mobile) { alert("This student does not have a registered mobile number."); return; }
         let phoneNumber = student.mobile.replace(/\D/g, '');
         if (phoneNumber.length === 10) phoneNumber = '91' + phoneNumber;
@@ -970,7 +963,7 @@ const App = () => {
             message = `Dear ${student.name} (s/o ${student.father_name}),\n\nThank you for your payment of ₹${amount} for your monthly subscription at ${libraryProfile.library_name}. Your fee is paid until ${new Date(student.next_due_date).toLocaleDateString()}.\n\nHappy studying!`;
         }
         window.open(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`, '_blank');
-    };
+    }, [libraryProfile]);
 
     const handleViewSeatOccupants = useCallback((occupantData) => {
         const { morningId, eveningId, seatNumber } = occupantData;
@@ -1013,7 +1006,6 @@ const App = () => {
         return <LibrarySetupForm onSave={saveLibraryProfile} isSubmitting={isSubmitting} onBack={handleSignOut} />;
     }
 
-    // ===== MODIFICATION: Centralized access control based on Supabase profile data =====
     const hasActiveSubscription = libraryProfile.subscription_plan && 
         (libraryProfile.subscription_plan === 'Lifetime' || 
         (libraryProfile.subscription_expires_at && new Date(libraryProfile.subscription_expires_at) > new Date()));
@@ -1023,7 +1015,6 @@ const App = () => {
     const canAccessApp = hasActiveSubscription || hasActiveTrial;
 
     if (!canAccessApp) {
-        // This will show if trial has expired and there's no active subscription.
         return <SubscriptionScreen user={session.user} libraryProfile={libraryProfile} onSubscriptionSuccess={() => fetchLibraryProfile(session.user)} />;
     }
 
@@ -1064,6 +1055,7 @@ const LibrarySetupForm = ({ onSave, isSubmitting, onBack }) => {
     const [logoFile, setLogoFile] = useState(null);
     const [logoPreview, setLogoPreview] = useState(null);
     const [validation, setValidation] = useState({ library_name: null, reg_no: null });
+    
     const checkUniqueness = useCallback((field, value) => {
         if (!value) { setValidation(v => ({ ...v, [field]: null })); return; }
         setValidation(v => ({ ...v, [field]: 'checking' }));
@@ -1073,7 +1065,9 @@ const LibrarySetupForm = ({ onSave, isSubmitting, onBack }) => {
         };
         check();
     }, []);
+    
     const debouncedCheck = useMemo(() => debounce(checkUniqueness, 500), [checkUniqueness]);
+    
     const handleChange = (e) => {
         const { name, value } = e.target;
         setProfile(p => ({ ...p, [name]: value }));
@@ -1081,6 +1075,7 @@ const LibrarySetupForm = ({ onSave, isSubmitting, onBack }) => {
             debouncedCheck(name, value);
         }
     };
+    
     const handleLogoChange = (e) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
@@ -1088,6 +1083,7 @@ const LibrarySetupForm = ({ onSave, isSubmitting, onBack }) => {
             setLogoPreview(URL.createObjectURL(file));
         }
     };
+    
     const handleSubmit = (e) => {
         e.preventDefault();
         if (validation.library_name === 'invalid' || validation.reg_no === 'invalid') {
@@ -1095,18 +1091,21 @@ const LibrarySetupForm = ({ onSave, isSubmitting, onBack }) => {
         }
         onSave(profile, logoFile);
     };
+
     const isSubmitDisabled = isSubmitting || validation.library_name === 'invalid' || validation.reg_no === 'invalid' || validation.library_name === 'checking' || validation.reg_no === 'checking';
+    
     const renderValidationIcon = (status) => {
         if (status === 'checking') return <Loader2 className="h-5 w-5 animate-spin text-gray-400" />;
         if (status === 'valid') return <CheckCircle className="h-5 w-5 text-green-500" />;
         if (status === 'invalid') return <XCircle className="h-5 w-5 text-red-500" />;
         return null;
     };
+    
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center p-4 transition-all duration-500">
             <div className="max-w-2xl w-full">
                 <div className="text-center mb-8"><BookOpen className="mx-auto h-12 w-auto text-indigo-600" /><h2 className="mt-6 text-3xl font-extrabold text-gray-900">Library Setup</h2><p className="mt-2 text-sm text-gray-600">Enter your library details to get started and begin your 7-day trial.</p></div>
-                <div className="bg-white p-8 rounded-2xl shadow-lg">
+                <div className="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="flex flex-col items-center space-y-4"><label htmlFor="logo-upload" className="cursor-pointer"><div className="w-28 h-28 rounded-full bg-gray-100 border-2 border-dashed flex items-center justify-center text-gray-400 hover:bg-gray-200 hover:border-indigo-500 transition">{logoPreview ? <img src={logoPreview} alt="Logo Preview" className="w-full h-full rounded-full object-cover" /> : <UploadCloud size={40} />}</div></label><input id="logo-upload" type="file" className="hidden" accept="image/*" onChange={handleLogoChange} /><p className="text-sm text-gray-500">Upload your library logo</p></div>
                         <div className="relative"><input name="library_name" value={profile.library_name} onChange={handleChange} required className="peer w-full p-3 pt-5 border border-gray-300 rounded-lg text-gray-900 placeholder-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" placeholder="Library Name" /><label className="absolute left-3 -top-2.5 text-gray-600 text-sm transition-all peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-400 peer-placeholder-shown:top-3.5 peer-focus:-top-2.5 peer-focus:text-sm peer-focus:text-indigo-600">Library Name</label><div className="absolute inset-y-0 right-0 pr-3 flex items-center">{renderValidationIcon(validation.library_name)}</div>{validation.library_name === 'invalid' && <p className="text-xs text-red-500 mt-1">This name is already in use.</p>}</div>
@@ -1142,12 +1141,13 @@ const ModalRouter = ({ content, onClose, isSubmitting, ...props }) => {
             default: return null;
         }
     };
-    return <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4"><div className={`bg-white p-6 md:p-8 rounded-lg shadow-2xl w-full ${type === 'printReceipt' || type === 'studentProfileDetail' || type === 'seatOccupantsDetail' ? 'max-w-md md:max-w-2xl lg:max-w-3xl' : 'max-w-sm md:max-w-md lg:max-w-lg'} relative max-h-[90vh] overflow-y-auto animate-fade-in-up styled-scrollbar`}><button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 disabled:opacity-50" disabled={isSubmitting}><X size={24} /></button>{renderModal()}</div></div>;
+    return <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4"><div className={`bg-white p-6 md:p-8 rounded-lg shadow-2xl w-full ${type === 'printReceipt' || type === 'studentProfileDetail' || type === 'seatOccupantsDetail' ? 'max-w-md md:max-w-2xl' : 'max-w-lg'} relative max-h-[90vh] overflow-y-auto animate-fade-in-up styled-scrollbar`}><button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 disabled:opacity-50" disabled={isSubmitting}><X size={24} /></button>{renderModal()}</div></div>;
 };
 
 // --- UI & VIEW COMPONENTS ---
-const SplashScreen = () => (<div className="flex h-screen w-full items-center justify-center bg-indigo-600"><div className="text-center text-white animate-pulse"><BookOpen size={80} className="mx-auto mb-4" /><h1 className="text-5xl font-bold tracking-wider">Library MS</h1></div></div>);
-const Header = ({ userEmail, libraryName, timeLeft, subscriptionStatus, onMenuClick }) => {
+const SplashScreen = React.memo(() => (<div className="flex h-screen w-full items-center justify-center bg-indigo-600"><div className="text-center text-white animate-pulse"><BookOpen size={80} className="mx-auto mb-4" /><h1 className="text-4xl md:text-5xl font-bold tracking-wider">Library MS</h1></div></div>));
+
+const Header = React.memo(({ userEmail, libraryName, timeLeft, subscriptionStatus, onMenuClick }) => {
     const formatTime = (ms) => {
         if (ms === null || ms <= 0) return "00:00:00";
         
@@ -1211,17 +1211,17 @@ const Header = ({ userEmail, libraryName, timeLeft, subscriptionStatus, onMenuCl
                 <button onClick={onMenuClick} className="lg:hidden text-gray-600">
                     <Menu size={24} />
                 </button>
-                <h2 className="text-xl md:text-2xl font-semibold text-gray-700 truncate">{libraryName || 'Library Management'}</h2>
+                <h2 className="text-lg md:text-2xl font-semibold text-gray-700 truncate">{libraryName || 'Library Management'}</h2>
             </div>
             <div className="flex items-center gap-4">
                 {getStatusPill()}
-                <div className="text-sm text-gray-600 hidden md:block">{userEmail}</div>
+                <div className="text-sm text-gray-600 hidden md:block truncate max-w-[150px]">{userEmail}</div>
             </div>
         </header>
     );
-};
+});
 
-const Sidebar = ({ setActiveView, activeView, onSignOut, libraryName, isSidebarOpen, setIsSidebarOpen }) => {
+const Sidebar = React.memo(({ setActiveView, activeView, onSignOut, libraryName, isSidebarOpen, setIsSidebarOpen }) => {
     const navItems = [{ id: 'dashboard', icon: <User size={20} />, label: 'Dashboard' }, { id: 'seats', icon: <Armchair size={20} />, label: 'Seat Matrix' }, { id: 'students', icon: <Users size={20} />, label: 'Students' }, { id: 'fees', icon: <DollarSign size={20} />, label: 'Fees' }, { id: 'reports', icon: <BookMarked size={20} />, label: 'Reports' }, { id: 'departures', icon: <History size={20} />, label: 'Departures' }, { id: 'settings', icon: <Settings size={20} />, label: 'Settings' }, { id: 'support', icon: <LifeBuoy size={20} />, label: 'Support' },];
 
     const handleNavigation = (view) => {
@@ -1269,9 +1269,9 @@ const Sidebar = ({ setActiveView, activeView, onSignOut, libraryName, isSidebarO
             {isSidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
         </>
     );
-};
+});
 
-const DashboardView = ({ stats, activeStudents, onSearch, profile, onClearSearch, onCardClick, libraryName, totalIncome, isIncomeVisible, setIsIncomeVisible, onIncomeClick }) => {
+const DashboardView = React.memo(({ stats, activeStudents, onSearch, profile, onClearSearch, onCardClick, libraryName, totalIncome, isIncomeVisible, setIsIncomeVisible, onIncomeClick }) => {
     const searchInputRef = useRef(null);
 
     const handleClearAndFocus = () => {
@@ -1289,17 +1289,17 @@ const DashboardView = ({ stats, activeStudents, onSearch, profile, onClearSearch
             ) : (
                 <>
                     <div className="bg-white p-6 rounded-xl shadow-md">
-                        <h2 className="text-3xl font-bold text-gray-800">Welcome back,</h2>
+                        <h2 className="text-2xl md:text-3xl font-bold text-gray-800">Welcome back,</h2>
                         <p className="text-indigo-600 text-lg">{libraryName}!</p>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                         <StatCard label="Active Students" value={stats.totalStudents} color="blue" icon={<Users />} onClick={() => onCardClick('Active Students', activeStudents)} />
                         <StatCard label="Fee Alerts" value={stats.feesPendingList.length} color="red" icon={<AlertTriangle />} onClick={() => onCardClick('Students with Fee Alerts', stats.feesPendingList)} />
                         <StatCard label="Pending Fees" value={`₹${stats.totalFeesPending.toLocaleString('en-IN')}`} color="yellow" icon={<DollarSign />} onClick={() => onCardClick('Students with Pending Fees', stats.feesPendingList)} />
                         <StatCard label="Total Income" value={isIncomeVisible ? `₹${totalIncome.toLocaleString('en-IN')}` : '••••••••'} color="green" icon={<TrendingUp />} onClick={isIncomeVisible ? () => setIsIncomeVisible(false) : onIncomeClick} isSensitive={true} isRevealed={isIncomeVisible} />
                     </div>
                     <div className="bg-white p-6 rounded-xl shadow-md">
-                        <h3 className="text-2xl font-semibold text-gray-800 mb-4">Find Student Profile</h3>
+                        <h3 className="text-xl md:text-2xl font-semibold text-gray-800 mb-4">Find Student Profile</h3>
                         <div className="relative">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                             <input
@@ -1316,37 +1316,39 @@ const DashboardView = ({ stats, activeStudents, onSearch, profile, onClearSearch
             )}
         </div>
     );
-};
+});
 
-const SupportView = () => (
-    <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl mx-auto animate-fade-in-up">
-        <div className="flex flex-col items-center text-center mb-8"><LifeBuoy className="h-16 w-16 text-indigo-500 mb-4" /><h2 className="text-3xl font-bold text-gray-800">Contact & Support</h2><p className="mt-2 text-gray-600">For any technical issues, feature requests, or questions, please feel free to reach out through any of the channels below.</p></div>
+const SupportView = React.memo(() => (
+    <div className="bg-white p-6 md:p-8 rounded-xl shadow-lg max-w-2xl mx-auto animate-fade-in-up">
+        <div className="flex flex-col items-center text-center mb-8"><LifeBuoy className="h-16 w-16 text-indigo-500 mb-4" /><h2 className="text-2xl md:text-3xl font-bold text-gray-800">Contact & Support</h2><p className="mt-2 text-gray-600">For any technical issues, feature requests, or questions, please feel free to reach out through any of the channels below.</p></div>
         <div className="space-y-4">
-            <a href="mailto:amitsharmaas2003@gmail.com" className="flex items-center p-4 border rounded-lg hover:bg-gray-50 hover:shadow-sm transition-all duration-200"><Mail size={24} className="text-red-500 flex-shrink-0" /><div className="ml-4"><p className="font-semibold text-lg text-gray-800">Email</p><p className="text-indigo-600 hover:underline">amitsharmaas2003@gmail.com</p></div></a>
+            <a href="mailto:amitsharmaas2003@gmail.com" className="flex items-center p-4 border rounded-lg hover:bg-gray-50 hover:shadow-sm transition-all duration-200"><Mail size={24} className="text-red-500 flex-shrink-0" /><div className="ml-4"><p className="font-semibold text-lg text-gray-800">Email</p><p className="text-indigo-600 hover:underline break-all">amitsharmaas2003@gmail.com</p></div></a>
             <a href="https://www.instagram.com/trigger_apna" target="_blank" rel="noopener noreferrer" className="flex items-center p-4 border rounded-lg hover:bg-gray-50 hover:shadow-sm transition-all duration-200"><User size={24} className="text-pink-500 flex-shrink-0" /><div className="ml-4"><p className="font-semibold text-lg text-gray-800">Instagram</p><p className="text-indigo-600 hover:underline">@trigger_apna</p></div></a>
             <a href="https://wa.me/918875910376" target="_blank" rel="noopener noreferrer" className="flex items-center p-4 border rounded-lg hover:bg-gray-50 hover:shadow-sm transition-all duration-200"><MessageSquare size={24} className="text-green-500 flex-shrink-0" /><div className="ml-4"><p className="font-semibold text-lg text-gray-800">WhatsApp</p><p className="text-indigo-600 hover:underline">+91 8875910376</p></div></a>
         </div>
     </div>
-);
-const StatCard = ({ label, value, color, icon, onClick, isSensitive = false, isRevealed = false }) => {
+));
+
+const StatCard = React.memo(({ label, value, color, icon, onClick, isSensitive = false, isRevealed = false }) => {
     const colorClasses = { blue: { bg: 'bg-blue-100', text: 'text-blue-600', gradient: 'from-blue-500 to-blue-400' }, red: { bg: 'bg-red-100', text: 'text-red-600', gradient: 'from-red-500 to-red-400' }, yellow: { bg: 'bg-yellow-100', text: 'text-yellow-600', gradient: 'from-yellow-500 to-yellow-400' }, green: { bg: 'bg-green-100', text: 'text-green-600', gradient: 'from-green-500 to-green-400' }, };
     const { bg, text, gradient } = colorClasses[color] || colorClasses.blue;
     return (
         <div className={`relative p-5 rounded-xl shadow-md bg-white overflow-hidden group ${onClick ? 'cursor-pointer' : ''}`} onClick={onClick}>
             <div className={`absolute top-0 left-0 h-full w-1 bg-gradient-to-b ${gradient}`}></div>
-            <div className="flex justify-between items-start"><div className="flex-1"><p className="text-sm font-medium text-gray-500 uppercase tracking-wider">{label}</p><p className="text-3xl font-bold text-gray-800 mt-1">{value}</p></div><div className={`p-3 rounded-full ${bg} ${text} group-hover:scale-110 transition-transform`}>{icon}</div></div>
+            <div className="flex justify-between items-start"><div className="flex-1"><p className="text-sm font-medium text-gray-500 uppercase tracking-wider">{label}</p><p className="text-2xl md:text-3xl font-bold text-gray-800 mt-1">{value}</p></div><div className={`p-3 rounded-full ${bg} ${text} group-hover:scale-110 transition-transform`}>{icon}</div></div>
             {isSensitive && (<div className="absolute bottom-3 right-3 text-gray-400">{isRevealed ? <EyeOff size={16} /> : <Eye size={16} />}</div>)}
         </div>
     );
-};
-const StudentProfileCard = ({ student, onClearSearch }) => {
+});
+
+const StudentProfileCard = React.memo(({ student, onClearSearch }) => {
     if (student.notFound) {
         return (
             <div className="bg-white p-6 rounded-lg shadow-xl text-center relative">
                 <button onClick={onClearSearch} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 transition-colors">
                     <XCircle size={24} />
                 </button>
-                <h3 className="text-2xl font-bold text-gray-800">Student Not Found</h3>
+                <h3 className="text-xl md:text-2xl font-bold text-gray-800">Student Not Found</h3>
                 <p className="text-gray-500">No student matches your search query.</p>
             </div>
         );
@@ -1360,9 +1362,9 @@ const StudentProfileCard = ({ student, onClearSearch }) => {
             <div className="flex flex-col sm:flex-row items-center gap-6">
                 <img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-32 h-32 rounded-full object-cover border-4 border-indigo-200" />
                 <div className="flex-1 text-center sm:text-left">
-                    <h2 className="text-3xl font-bold text-gray-800">{student.title} {student.name}</h2>
+                    <h2 className="text-2xl md:text-3xl font-bold text-gray-800">{student.title} {student.name}</h2>
                     <p className="text-indigo-600 font-mono">Reg. No: {student.student_id}</p>
-                    <div className="flex items-center justify-center sm:justify-start gap-4 mt-2 text-gray-600">
+                    <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-4 mt-2 text-gray-600">
                         <span className="flex items-center gap-1"><Phone size={16} /> {student.mobile}</span>
                         <span className="flex items-center gap-1"><Armchair size={16} /> Seat {student.seat_number}</span>
                     </div>
@@ -1374,8 +1376,9 @@ const StudentProfileCard = ({ student, onClearSearch }) => {
             </div>
         </div>
     );
-};
-const SeatMatrix = ({ seats, activeStudents, onSeatClick, onViewStudent, onViewSeatOccupants }) => {
+});
+
+const SeatMatrix = React.memo(({ seats, activeStudents, onSeatClick, onViewStudent, onViewSeatOccupants }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResult, setSearchResult] = useState(null);
     const handleSeatSearch = () => {
@@ -1407,7 +1410,7 @@ const SeatMatrix = ({ seats, activeStudents, onSeatClick, onViewStudent, onViewS
     return (
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                <h3 className="text-2xl font-semibold text-gray-800">Seat Matrix</h3>
+                <h3 className="text-xl md:text-2xl font-semibold text-gray-800">Seat Matrix</h3>
                 <div className="flex gap-2 items-center w-full md:w-auto">
                     <div className="relative flex-grow">
                         <input type="number" placeholder="Search Seat No..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSeatSearch()} className="w-full p-2 pl-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -1457,7 +1460,7 @@ const SeatMatrix = ({ seats, activeStudents, onSeatClick, onViewStudent, onViewS
                             const state = getSeatState(seat);
                             return (
                                 <div key={seat.number} style={state.style} className={`relative group w-full aspect-square flex flex-col items-center justify-center border rounded-md cursor-pointer transition-all duration-200 ${state.className}`} onClick={() => handleSeatClick(seat, state)}>
-                                    <span className="font-bold text-base md:text-lg">{seat.number}</span>
+                                    <span className="font-bold text-sm md:text-lg">{seat.number}</span>
                                     {state.icon}
                                 </div>
                             );
@@ -1467,15 +1470,15 @@ const SeatMatrix = ({ seats, activeStudents, onSeatClick, onViewStudent, onViewS
             )}
         </div>
     );
-};
+});
 
-const StudentManagement = ({ students, onAddStudent, onView, onEdit, onDelete, onDepart }) => {
+const StudentManagement = React.memo(({ students, onAddStudent, onView, onEdit, onDelete, onDepart }) => {
     const [filter, setFilter] = useState('active');
     const filteredStudents = useMemo(() => students.filter(s => s.status === filter), [students, filter]);
     return (
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
             <div className="flex flex-col md:flex-row justify-between items-center mb-6 border-b pb-4 gap-4">
-                <h3 className="text-2xl font-semibold text-gray-800">Student Management</h3>
+                <h3 className="text-xl md:text-2xl font-semibold text-gray-800">Student Management</h3>
                 <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto">
                     <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg flex-grow md:flex-grow-0">
                         <button onClick={() => setFilter('active')} className={`w-1/2 md:w-auto px-4 py-1 rounded-md text-sm font-semibold transition ${filter === 'active' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}>Active</button>
@@ -1519,9 +1522,9 @@ const StudentManagement = ({ students, onAddStudent, onView, onEdit, onDelete, o
             </div>
         </div>
     );
-};
+});
 
-const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhatsApp, onViewProfile, onReactivate }) => {
+const FeeManagement = React.memo(({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhatsApp, onViewProfile, onReactivate }) => {
     const initialFilters = { searchQuery: '', dateRange: { from: '', to: '' }, feeStatus: 'all', shiftType: 'all', studentStatus: 'all', dateFilterType: 'next_due_date', };
     const [filters, setFilters] = useState(initialFilters);
     const handleFilterChange = (e) => { const { name, value } = e.target; setFilters(prev => ({ ...prev, [name]: value })); };
@@ -1550,7 +1553,7 @@ const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhat
         <div className="space-y-6">
             <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 border-b pb-4">
-                    <h3 className="text-2xl font-semibold text-gray-800">Fee Dashboard</h3>
+                    <h3 className="text-xl md:text-2xl font-semibold text-gray-800">Fee Dashboard</h3>
                     <Button onClick={resetFilters} className="bg-gray-200 text-gray-700 hover:bg-gray-300 w-full md:w-auto"><FilterX size={16} className="mr-2" /> Reset Filters</Button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1633,11 +1636,11 @@ const FeeManagement = ({ students, onPayFee, onMarkAsDue, onPrintReceipt, onWhat
             </div>
         </div>
     );
-};
+});
 
-const DeparturesView = ({ departedStudents }) => (
+const DeparturesView = React.memo(({ departedStudents }) => (
     <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
-        <h3 className="text-2xl font-semibold text-gray-800 mb-4">Departed Student History</h3>
+        <h3 className="text-xl md:text-2xl font-semibold text-gray-800 mb-4">Departed Student History</h3>
         <div className="overflow-x-auto">
             <table className="w-full text-left">
                 <thead>
@@ -1668,36 +1671,36 @@ const DeparturesView = ({ departedStudents }) => (
             </table>
         </div>
     </div>
-);
-const SettingsView = ({ feeStructure, onUpdate }) => {
+));
+
+const SettingsView = React.memo(({ feeStructure, onUpdate }) => {
     const [fees, setFees] = useState(feeStructure); const [saved, setSaved] = useState(false);
     const handleSave = () => { onUpdate(fees); setSaved(true); setTimeout(() => setSaved(false), 2000); };
     return (<div className="bg-white p-6 rounded-lg shadow-md max-w-md mx-auto"><h3 className="text-2xl font-semibold text-gray-800 mb-6">Fee Structure Settings</h3><div className="space-y-4"><div><label htmlFor="full-time-fee" className="block text-sm font-medium text-gray-700 mb-1">Full-time Fee (₹)</label><input type="number" id="full-time-fee" value={fees['Full-time']} onChange={e => setFees({ ...fees, 'Full-time': Number(e.target.value) })} className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div><div><label htmlFor="half-time-fee" className="block text-sm font-medium text-gray-700 mb-1">Half-time Fee (₹)</label><input type="number" id="half-time-fee" value={fees['Half-time']} onChange={e => setFees({ ...fees, 'Half-time': Number(e.target.value) })} className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div></div><button onClick={handleSave} className="w-full mt-6 bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 transition duration-200 font-semibold flex items-center justify-center">{saved ? (<><CheckCircle size={20} className="mr-2" /> Saved!</>) : ('Save Changes')}</button></div>);
-};
-const Button = ({ children, ...props }) => <button {...props} className="flex items-center justify-center px-4 py-2 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">{props.disabled && <Loader2 className="animate-spin mr-2 h-5 w-5" />}{children}</button>;
-const ConfirmationModal = ({ onConfirm, onClose, text, title, confirmText, item, isSubmitting }) => (<div><h3 className={`text-2xl font-semibold mb-2 ${confirmText === 'Delete' ? 'text-red-700' : 'text-gray-800'}`}>{title}</h3><p className="text-gray-600 mb-6">{text}</p><div className="flex justify-end gap-4"><button onClick={onClose} disabled={isSubmitting} className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-60">Cancel</button><Button onClick={() => onConfirm(item)} disabled={isSubmitting} className={confirmText === 'Delete' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}>{isSubmitting ? `${confirmText}...` : confirmText}</Button></div></div>);
-const AddStudentForm = ({ onAddStudent, seats, prefill, feeStructure, isSubmitting }) => {
+});
+
+const Button = ({ children, ...props }) => <button {...props} className={`flex items-center justify-center px-4 py-2 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${props.className}`}>{props.disabled && <Loader2 className="animate-spin mr-2 h-5 w-5" />}{children}</button>;
+
+const ConfirmationModal = React.memo(({ onConfirm, onClose, text, title, confirmText, item, isSubmitting }) => (<div><h3 className={`text-xl md:text-2xl font-semibold mb-2 ${confirmText === 'Delete' ? 'text-red-700' : 'text-gray-800'}`}>{title}</h3><p className="text-gray-600 mb-6">{text}</p><div className="flex justify-end gap-4"><button onClick={onClose} disabled={isSubmitting} className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-60">Cancel</button><Button onClick={() => onConfirm(item)} disabled={isSubmitting} className={confirmText === 'Delete' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}>{isSubmitting ? `${confirmText}...` : confirmText}</Button></div></div>));
+
+const AddStudentForm = React.memo(({ onAddStudent, seats, prefill, feeStructure, isSubmitting }) => {
     const [formData, setFormData] = useState({ title: prefill?.gender === 'girl' ? 'Ms.' : 'Mr.', name: '', fatherName: '', mobile: '', admissionType: prefill?.prefillShift ? 'Half-time' : 'Full-time', seatNumber: prefill?.seatNumber || '', admissionDate: new Date().toISOString().split('T')[0], shift: prefill?.prefillShift || 'Morning' });
     const [photoFile, setPhotoFile] = useState(null); const [photoPreview, setPhotoPreview] = useState(null); const [error, setError] = useState('');
     const handleChange = (e) => { const { name, value } = e.target; const newFormData = { ...formData, [name]: value }; if (name === 'title') { newFormData.seatNumber = ''; } setFormData(newFormData); };
     
-    // ===== MODIFICATION: Added automatic image compression on photo selection =====
     const handlePhotoChange = async (e) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             setError(''); 
 
             const options = {
-                maxSizeMB: 0.5, // Compress to under 500kb
+                maxSizeMB: 0.5,
                 maxWidthOrHeight: 1024,
                 useWebWorker: true,
             };
 
             try {
-                console.log(`Original file size: ${file.size / 1024 / 1024} MB`);
                 const compressedFile = await imageCompression(file, options);
-                console.log(`Compressed file size: ${compressedFile.size / 1024 / 1024} MB`);
-
                 setPhotoFile(compressedFile);
                 setPhotoPreview(URL.createObjectURL(compressedFile));
             } catch (compressionError) {
@@ -1710,6 +1713,7 @@ const AddStudentForm = ({ onAddStudent, seats, prefill, feeStructure, isSubmitti
     };
     
     const handleSubmit = (e) => { e.preventDefault(); setError(''); if (!photoFile) { setError('Photo is compulsory for admission.'); return; } const finalData = { ...formData }; if (finalData.admissionType === 'Full-time') { finalData.shift = null; } onAddStudent(finalData, photoFile); };
+    
     const availableSeats = useMemo(() => {
         const studentGender = formData.title === 'Mr.' ? 'boy' : 'girl';
         return seats.filter(s => {
@@ -1719,35 +1723,42 @@ const AddStudentForm = ({ onAddStudent, seats, prefill, feeStructure, isSubmitti
             return false;
         });
     }, [seats, formData.title, formData.admissionType, formData.shift]);
-    return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-2xl font-semibold mb-6 text-gray-800">New Student Admission</h3><div className="flex items-center justify-center"><label htmlFor="photo-upload" className="cursor-pointer"><div className={`w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center border-2 border-dashed ${error ? 'border-red-500' : 'hover:border-indigo-500'}`}>{photoPreview ? <img src={photoPreview} alt="Preview" className="w-full h-full rounded-full object-cover" /> : <ImageIcon className="text-gray-400" size={40} />}</div></label><input id="photo-upload" type="file" className="hidden" accept="image/*" onChange={handlePhotoChange} /></div>{error && <p className="text-red-500 text-sm text-center">{error}</p>}<div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label>Title</label><select name="title" value={formData.title} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white"><option>Mr.</option><option>Ms.</option></select></div><div><label>Full Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Father/Husband Name</label><input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Mobile</label><input type="tel" name="mobile" value={formData.mobile} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Admission Date</label><input type="date" name="admissionDate" value={formData.admissionDate} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Admission Type</label><select name="admissionType" value={formData.admissionType} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" disabled={!!prefill?.prefillShift}><option value="Full-time">Full-time</option><option value="Half-time">Half-time</option></select></div>{formData.admissionType === 'Half-time' && (<div><label>Shift</label><select name="shift" value={formData.shift} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" disabled={!!prefill?.prefillShift}><option value="Morning">Morning</option><option value="Evening">Evening</option></select></div>)}<div className={formData.admissionType === 'Half-time' ? '' : 'md:col-span-2'}><label>Assign Seat</label><select name="seatNumber" value={formData.seatNumber} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" required ><option value="">Select an available seat</option>{availableSeats.map(s => <option key={s.number} value={s.number}>Seat {s.number}</option>)}</select></div></div><div className="p-4 bg-indigo-50 rounded-lg text-center"><h4 className="font-semibold text-indigo-800">Fee for {formData.admissionType}: <span className="font-bold">₹{feeStructure[formData.admissionType]}</span></h4></div><Button type="submit" disabled={isSubmitting} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700">{isSubmitting ? 'Saving...' : 'Confirm Admission'}</Button> </form>);
-};
-const EditStudentForm = ({ student, onEditStudent, isSubmitting }) => {
+    
+    return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-xl md:text-2xl font-semibold mb-6 text-gray-800">New Student Admission</h3><div className="flex items-center justify-center"><label htmlFor="photo-upload" className="cursor-pointer"><div className={`w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center border-2 border-dashed ${error ? 'border-red-500' : 'hover:border-indigo-500'}`}>{photoPreview ? <img src={photoPreview} alt="Preview" className="w-full h-full rounded-full object-cover" /> : <ImageIcon className="text-gray-400" size={40} />}</div></label><input id="photo-upload" type="file" className="hidden" accept="image/*" onChange={handlePhotoChange} /></div>{error && <p className="text-red-500 text-sm text-center">{error}</p>}<div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label>Title</label><select name="title" value={formData.title} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white"><option>Mr.</option><option>Ms.</option></select></div><div><label>Full Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Father/Husband Name</label><input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Mobile</label><input type="tel" name="mobile" value={formData.mobile} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Admission Date</label><input type="date" name="admissionDate" value={formData.admissionDate} onChange={handleChange} className="w-full p-2 border rounded-lg" required /></div><div><label>Admission Type</label><select name="admissionType" value={formData.admissionType} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" disabled={!!prefill?.prefillShift}><option value="Full-time">Full-time</option><option value="Half-time">Half-time</option></select></div>{formData.admissionType === 'Half-time' && (<div><label>Shift</label><select name="shift" value={formData.shift} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" disabled={!!prefill?.prefillShift}><option value="Morning">Morning</option><option value="Evening">Evening</option></select></div>)}<div className={formData.admissionType === 'Half-time' ? '' : 'md:col-span-2'}><label>Assign Seat</label><select name="seatNumber" value={formData.seatNumber} onChange={handleChange} className="w-full p-2 border rounded-lg bg-white" required ><option value="">Select an available seat</option>{availableSeats.map(s => <option key={s.number} value={s.number}>Seat {s.number}</option>)}</select></div></div><div className="p-4 bg-indigo-50 rounded-lg text-center"><h4 className="font-semibold text-indigo-800">Fee for {formData.admissionType}: <span className="font-bold">₹{feeStructure[formData.admissionType]}</span></h4></div><Button type="submit" disabled={isSubmitting} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700">{isSubmitting ? 'Saving...' : 'Confirm Admission'}</Button> </form>);
+});
+
+const EditStudentForm = React.memo(({ student, onEditStudent, isSubmitting }) => {
     const [formData, setFormData] = useState({ name: student.name, mobile: student.mobile, father_name: student.father_name });
     const handleSubmit = (e) => { e.preventDefault(); onEditStudent(student.id, formData); };
-    return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-2xl font-semibold mb-6 text-gray-800">Edit {student.name}</h3><div className="grid grid-cols-1 gap-4"><div><label>Full Name</label><input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-2 border rounded-lg" required /></div><div><label>Father/Husband Name</label><input type="text" value={formData.father_name} onChange={e => setFormData({ ...formData, father_name: e.target.value })} className="w-full p-2 border rounded-lg" required /></div><div><label>Mobile</label><input type="tel" value={formData.mobile} onChange={e => setFormData({ ...formData, mobile: e.target.value })} className="w-full p-2 border rounded-lg" required /></div></div><Button type="submit" disabled={isSubmitting} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700">{isSubmitting ? 'Saving...' : 'Save Changes'}</Button></form>);
-};
-const StudentFeeProfile = ({ student, onPay, isSubmitting }) => {
+    return (<form onSubmit={handleSubmit} className="space-y-4"><h3 className="text-xl md:text-2xl font-semibold mb-6 text-gray-800">Edit {student.name}</h3><div className="grid grid-cols-1 gap-4"><div><label>Full Name</label><input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-2 border rounded-lg" required /></div><div><label>Father/Husband Name</label><input type="text" value={formData.father_name} onChange={e => setFormData({ ...formData, father_name: e.target.value })} className="w-full p-2 border rounded-lg" required /></div><div><label>Mobile</label><input type="tel" value={formData.mobile} onChange={e => setFormData({ ...formData, mobile: e.target.value })} className="w-full p-2 border rounded-lg" required /></div></div><Button type="submit" disabled={isSubmitting} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700">{isSubmitting ? 'Saving...' : 'Save Changes'}</Button></form>);
+});
+
+const StudentFeeProfile = React.memo(({ student, onPay, isSubmitting }) => {
     const [paymentMethod, setPaymentMethod] = useState('UPI');
     const [months, setMonths] = useState(1);
     const handleConfirmPayment = () => { onPay(student.id, { amount: student.fee_amount, method: paymentMethod }, months); };
-    return (<div><h3 className="text-2xl font-semibold mb-2 text-gray-800">{student.name}'s Fee Profile</h3><p className="text-gray-600 mb-4">Reg. No: {student.student_id} | Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p><div className="mb-4"><h4 className="font-semibold text-gray-700 mb-2">Payment History</h4><div className="max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">{student.payment_history && student.payment_history.length > 0 ? student.payment_history.map((p, i) => (<div key={i} className="flex justify-between items-center p-2 border-b"><p>{new Date(p.date).toLocaleDateString()}: <span className="font-bold">₹{p.amount}</span></p><span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{p.method}</span></div>)) : <p className="text-center text-gray-500">No payments recorded.</p>}</div></div>{student.received_credit_log && student.received_credit_log.length > 0 && (<div className="mb-4"><h4 className="font-semibold text-gray-700 mb-2">Credit History</h4><div className="max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">{student.received_credit_log.map((log, i) => (<div key={i} className="p-2 border-b text-sm">Received <strong>{log.daysReceived} days</strong> from {log.fromName} on {new Date(log.date).toLocaleDateString()}</div>))}</div></div>)}<div><h4 className="font-semibold text-gray-700 mb-2">Receive New Payment</h4><div className="p-4 border rounded-lg"><p>Amount per month: <span className="font-bold text-xl">₹{student.fee_amount}</span></p><div className="my-2"><label className="block text-sm">Payment Method</label><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full p-2 border rounded-lg bg-white"><option>UPI</option><option>Cash</option></select></div><div className="my-2"><label className="block text-sm">Pay for how many months?</label><input type="number" value={months} onChange={e => setMonths(Math.max(1, parseInt(e.target.value) || 1))} className="w-full p-2 border rounded-lg" min="1" /></div><div className="mt-2 font-bold text-lg">Total Amount: ₹{student.fee_amount * months}</div><Button onClick={handleConfirmPayment} disabled={isSubmitting} className="w-full mt-2 bg-green-600 text-white p-3 hover:bg-green-700">{isSubmitting ? 'Processing...' : 'Confirm Payment'}</Button></div></div></div>);
-};
-const DepartStudentForm = ({ student, students, onConfirm, isSubmitting }) => {
+    return (<div><h3 className="text-xl md:text-2xl font-semibold mb-2 text-gray-800">{student.name}'s Fee Profile</h3><p className="text-gray-600 mb-4">Reg. No: {student.student_id} | Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p><div className="mb-4"><h4 className="font-semibold text-gray-700 mb-2">Payment History</h4><div className="max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">{student.payment_history && student.payment_history.length > 0 ? student.payment_history.map((p, i) => (<div key={i} className="flex justify-between items-center p-2 border-b"><p>{new Date(p.date).toLocaleDateString()}: <span className="font-bold">₹{p.amount}</span></p><span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{p.method}</span></div>)) : <p className="text-center text-gray-500">No payments recorded.</p>}</div></div>{student.received_credit_log && student.received_credit_log.length > 0 && (<div className="mb-4"><h4 className="font-semibold text-gray-700 mb-2">Credit History</h4><div className="max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">{student.received_credit_log.map((log, i) => (<div key={i} className="p-2 border-b text-sm">Received <strong>{log.daysReceived} days</strong> from {log.fromName} on {new Date(log.date).toLocaleDateString()}</div>))}</div></div>)}<div><h4 className="font-semibold text-gray-700 mb-2">Receive New Payment</h4><div className="p-4 border rounded-lg"><p>Amount per month: <span className="font-bold text-xl">₹{student.fee_amount}</span></p><div className="my-2"><label className="block text-sm">Payment Method</label><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full p-2 border rounded-lg bg-white"><option>UPI</option><option>Cash</option></select></div><div className="my-2"><label className="block text-sm">Pay for how many months?</label><input type="number" value={months} onChange={e => setMonths(Math.max(1, parseInt(e.target.value) || 1))} className="w-full p-2 border rounded-lg" min="1" /></div><div className="mt-2 font-bold text-lg">Total Amount: ₹{student.fee_amount * months}</div><Button onClick={handleConfirmPayment} disabled={isSubmitting} className="w-full mt-2 bg-green-600 text-white p-3 hover:bg-green-700">{isSubmitting ? 'Processing...' : 'Confirm Payment'}</Button></div></div></div>);
+});
+
+const DepartStudentForm = React.memo(({ student, students, onConfirm, isSubmitting }) => {
     const [transferTo, setTransferTo] = useState('');
     const [reason, setReason] = useState('');
     const today = new Date(); const nextDueDate = new Date(student.next_due_date); const remainingDays = nextDueDate > today ? Math.ceil((nextDueDate - today) / (1000 * 60 * 60 * 24)) : 0;
-    return (<div><h3 className="text-2xl font-semibold mb-2 text-red-700">Student Departure</h3><p className="mb-4">Confirm departure for <strong>{student.name}</strong> (Reg. No: {student.student_id})?</p><div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4"><h4 className="font-semibold">Credit Calculation</h4><p>Remaining billable days: <span className="font-bold">{remainingDays}</span></p>{remainingDays > 0 && <p className="text-sm text-gray-600">You can transfer these days to another student.</p>}</div>{remainingDays > 0 && (<div className="mb-4"><label className="block text-sm font-medium">Transfer Remaining Days To (Optional)</label><select value={transferTo} onChange={e => setTransferTo(e.target.value)} className="w-full p-2 border rounded-lg bg-white"><option value="">Don't Transfer</option>{students.filter(s => s.id !== student.id && s.status === 'active').map(s => (<option key={s.id} value={s.id}>{s.name} (Reg. No: {s.student_id})</option>))}</select></div>)}<div className="mb-4"><label className="block text-sm font-medium">Reason for Leaving (Optional)</label><textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full p-2 border rounded-lg" rows="3" placeholder="e.g., Course completed, Relocating..."></textarea></div><Button onClick={() => onConfirm(student.id, transferTo, reason)} disabled={isSubmitting} className="w-full mt-6 bg-red-600 text-white p-3 hover:bg-red-700">{isSubmitting ? 'Departing...' : 'Confirm Departure'}</Button></div>);
-};
-const ReactivateStudentForm = ({ student, seats, onConfirm, isSubmitting }) => {
+    return (<div><h3 className="text-xl md:text-2xl font-semibold mb-2 text-red-700">Student Departure</h3><p className="mb-4">Confirm departure for <strong>{student.name}</strong> (Reg. No: {student.student_id})?</p><div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4"><h4 className="font-semibold">Credit Calculation</h4><p>Remaining billable days: <span className="font-bold">{remainingDays}</span></p>{remainingDays > 0 && <p className="text-sm text-gray-600">You can transfer these days to another student.</p>}</div>{remainingDays > 0 && (<div className="mb-4"><label className="block text-sm font-medium">Transfer Remaining Days To (Optional)</label><select value={transferTo} onChange={e => setTransferTo(e.target.value)} className="w-full p-2 border rounded-lg bg-white"><option value="">Don't Transfer</option>{students.filter(s => s.id !== student.id && s.status === 'active').map(s => (<option key={s.id} value={s.id}>{s.name} (Reg. No: {s.student_id})</option>))}</select></div>)}<div className="mb-4"><label className="block text-sm font-medium">Reason for Leaving (Optional)</label><textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full p-2 border rounded-lg" rows="3" placeholder="e.g., Course completed, Relocating..."></textarea></div><Button onClick={() => onConfirm(student.id, transferTo, reason)} disabled={isSubmitting} className="w-full mt-6 bg-red-600 text-white p-3 hover:bg-red-700">{isSubmitting ? 'Departing...' : 'Confirm Departure'}</Button></div>);
+});
+
+const ReactivateStudentForm = React.memo(({ student, seats, onConfirm, isSubmitting }) => {
     const [newSeatNumber, setNewSeatNumber] = useState('');
     const availableSeats = useMemo(() => seats.filter(s => !s.occupiedBy.morning && !s.occupiedBy.evening), [seats]);
     const handleSubmit = (e) => { e.preventDefault(); if (!newSeatNumber) { alert("Please select a new seat for the student."); return; } onConfirm(student.id, newSeatNumber); };
-    return (<form onSubmit={handleSubmit}><h3 className="text-2xl font-semibold mb-2 text-green-700">Reactivate Student</h3><p className="mb-4">Reactivating <strong>{student.name}</strong> (Reg. No: {student.student_id}). Please assign a new seat.</p><div className="mb-4"><label htmlFor="seat-select" className="block text-sm font-medium mb-1">Assign New Seat</label><select id="seat-select" value={newSeatNumber} onChange={e => setNewSeatNumber(e.target.value)} className="w-full p-2 border rounded-lg bg-white" required><option value="">Select an available seat</option>{availableSeats.map(s => (<option key={s.number} value={s.number}>Seat {s.number} ({s.gender.charAt(0).toUpperCase() + s.gender.slice(1)})</option>))}</select></div><Button type="submit" disabled={isSubmitting || !newSeatNumber} className="w-full mt-6 bg-green-600 text-white p-3 hover:bg-green-700">{isSubmitting ? 'Reactivating...' : 'Confirm Reactivation'}</Button></form>);
-};
-const ListViewModal = ({ title, data, onWhatsApp }) => {
+    return (<form onSubmit={handleSubmit}><h3 className="text-xl md:text-2xl font-semibold mb-2 text-green-700">Reactivate Student</h3><p className="mb-4">Reactivating <strong>{student.name}</strong> (Reg. No: {student.student_id}). Please assign a new seat.</p><div className="mb-4"><label htmlFor="seat-select" className="block text-sm font-medium mb-1">Assign New Seat</label><select id="seat-select" value={newSeatNumber} onChange={e => setNewSeatNumber(e.target.value)} className="w-full p-2 border rounded-lg bg-white" required><option value="">Select an available seat</option>{availableSeats.map(s => (<option key={s.number} value={s.number}>Seat {s.number} ({s.gender.charAt(0).toUpperCase() + s.gender.slice(1)})</option>))}</select></div><Button type="submit" disabled={isSubmitting || !newSeatNumber} className="w-full mt-6 bg-green-600 text-white p-3 hover:bg-green-700">{isSubmitting ? 'Reactivating...' : 'Confirm Reactivation'}</Button></form>);
+});
+
+const ListViewModal = React.memo(({ title, data, onWhatsApp }) => {
     const showWhatsAppButton = onWhatsApp && title.includes('Fee Alerts');
-    return (<div><h3 className="text-2xl font-semibold mb-4 text-gray-800">{title}</h3><div className="max-h-80 overflow-y-auto"><div className={`grid ${showWhatsAppButton ? 'grid-cols-4' : 'grid-cols-3'} items-center p-2 border-b bg-gray-50 font-semibold text-sm text-gray-600 sticky top-0`}><span>Student</span><span>Admission Date</span><span className="text-right">Next Due Date</span>{showWhatsAppButton && <span className="text-right">Action</span>}</div>{data.length > 0 ? data.map(s => (<div key={s.id} className={`grid ${showWhatsAppButton ? 'grid-cols-4' : 'grid-cols-3'} items-center p-2 border-b`}><div><p className="font-medium">{s.name}</p><p className="text-sm text-gray-500">Reg: {s.student_id}</p></div><div className="text-sm text-gray-600"><p>{new Date(s.admission_date).toLocaleDateString()}</p></div><div className="text-sm text-gray-600 text-right"><p>{new Date(s.next_due_date).toLocaleDateString()}</p></div>{showWhatsAppButton && (<div className="text-right"><button onClick={() => onWhatsApp(s, 'due')} className="p-2 rounded-md bg-green-100 text-green-600 hover:bg-green-200" title="Send WhatsApp Reminder"><MessageSquare size={16} /></button></div>)}</div>)) : <p className="text-center text-gray-500 p-4">No students to display.</p>}</div></div>);
-};
+    return (<div><h3 className="text-xl md:text-2xl font-semibold mb-4 text-gray-800">{title}</h3><div className="max-h-80 overflow-y-auto"><div className={`grid ${showWhatsAppButton ? 'grid-cols-4' : 'grid-cols-3'} items-center p-2 border-b bg-gray-50 font-semibold text-sm text-gray-600 sticky top-0`}><span>Student</span><span>Admission Date</span><span className="text-right">Next Due Date</span>{showWhatsAppButton && <span className="text-right">Action</span>}</div>{data.length > 0 ? data.map(s => (<div key={s.id} className={`grid ${showWhatsAppButton ? 'grid-cols-4' : 'grid-cols-3'} items-center p-2 border-b`}><div><p className="font-medium">{s.name}</p><p className="text-sm text-gray-500">Reg: {s.student_id}</p></div><div className="text-sm text-gray-600"><p>{new Date(s.admission_date).toLocaleDateString()}</p></div><div className="text-sm text-gray-600 text-right"><p>{new Date(s.next_due_date).toLocaleDateString()}</p></div>{showWhatsAppButton && (<div className="text-right"><button onClick={() => onWhatsApp(s, 'due')} className="p-2 rounded-md bg-green-100 text-green-600 hover:bg-green-200" title="Send WhatsApp Reminder"><MessageSquare size={16} /></button></div>)}</div>)) : <p className="text-center text-gray-500 p-4">No students to display.</p>}</div></div>);
+});
+
 const FeeReceipt = React.forwardRef(({ student, libraryProfile, payment }, ref) => {
     const paymentDate = new Date(payment.date);
     const toDate = new Date(student.next_due_date);
@@ -1755,38 +1766,44 @@ const FeeReceipt = React.forwardRef(({ student, libraryProfile, payment }, ref) 
     fromDate.setMonth(fromDate.getMonth() - 1);
     const receiptNo = `${student.student_id}-${paymentDate.getFullYear()}${(paymentDate.getMonth() + 1).toString().padStart(2, '0')}`;
     const numberToWords = (num) => { const a = ['', 'one ', 'two ', 'three ', 'four ', 'five ', 'six ', 'seven ', 'eight ', 'nine ', 'ten ', 'eleven ', 'twelve ', 'thirteen ', 'fourteen ', 'fifteen ', 'sixteen ', 'seventeen ', 'eighteen ', 'nineteen ']; const b = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']; if ((num = num.toString()).length > 9) return 'overflow'; let n = parseInt(num); if (n === 0) return 'Zero Only'; let str = ''; if (n >= 1000) { str += a[Math.floor(n / 1000)] + 'thousand '; n %= 1000; } if (n >= 100) { str += a[Math.floor(n / 100)] + 'hundred '; n %= 100; } if (n > 0) { if (str !== '') str += 'and '; if (n < 20) { str += a[n]; } else { str += b[Math.floor(n / 10)] + a[n % 10]; } } return str.trim().split(' ').map(s => s.charAt(0).toUpperCase() + s.substring(1)).join(' ') + ' Only'; };
-    return (<div ref={ref} className="p-2 bg-white text-gray-900"><style type="text/css" media="print">{`@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&display=swap'); @page { size: A5; margin: 0; } body { -webkit-print-color-adjust: exact; font-family: 'Roboto Slab', serif; } .no-print { display: none; } .receipt-container { border: 2px solid #000 !important; }`}</style><div className="receipt-container border-2 border-dashed border-gray-400 p-4 font-['Roboto_Slab']"><header className="text-center mb-4">{libraryProfile?.logo_url && <img src={libraryProfile.logo_url} alt="Logo" className="h-20 w-20 mx-auto object-contain mb-2" />}<h1 className="text-3xl font-bold uppercase tracking-wider">{libraryProfile?.library_name || 'Library Name'}</h1><p className="text-xs">{libraryProfile?.library_address || 'Address not set'}</p><div className="text-xs flex justify-center gap-4"><span>Ph: {libraryProfile?.phone_numbers || 'Not set'}</span>{libraryProfile?.reg_no && <span>Reg.No: {libraryProfile.reg_no}</span>}</div></header><div className="flex justify-between items-start text-sm border-t-2 border-b-2 border-black py-1 my-2"><div><span className="font-bold">Receipt No:</span> {receiptNo}</div><div><span className="font-bold">Date:</span> {paymentDate.toLocaleDateString('en-GB')}</div></div><div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mb-2"><div className="col-span-2"><span className="font-bold pr-2">Name Of Student:</span>{student.name}</div><div className="col-span-2"><span className="font-bold pr-2">Father's/Husband Name:</span>{student.father_name}</div><div><span className="font-bold pr-2">Reg. No:</span>{student.student_id}</div><div><span className="font-bold pr-2">Mob:</span>{student.mobile}</div><div className="col-span-2"><span className="font-bold pr-2">Fee for Period:</span>{fromDate.toLocaleDateString('en-GB')} To {toDate.toLocaleDateString('en-GB')}</div><div><span className="font-bold pr-2">Shift:</span>{student.admission_type === 'Full-time' ? 'Full Day' : student.shift}</div></div><div className="border-t-2 border-black pt-2"><div className="flex justify-between items-center text-sm"><p className="font-bold">The Sum of Rupee:</p><div className="border-2 border-black px-4 py-1 font-bold">₹ {payment.amount.toFixed(2)} /-</div></div><p className="text-sm capitalize font-semibold mt-1">{numberToWords(payment.amount)}</p></div><div className="flex justify-between items-end mt-10"><p className="text-xs text-gray-700">Note: Fee is not Refundable/Transferable.</p><div className="text-center"><div className="border-b-2 border-gray-600 border-dotted w-40 mb-1"></div><p className="text-xs font-bold">Authorized Signature</p></div></div></div></div>);
+    return (<div ref={ref} className="p-2 bg-white text-gray-900"><style type="text/css" media="print">{`@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&display=swap'); @page { size: A5; margin: 0; } body { -webkit-print-color-adjust: exact; font-family: 'Roboto Slab', serif; } .no-print { display: none; } .receipt-container { border: 2px solid #000 !important; }`}</style><div className="receipt-container border-2 border-dashed border-gray-400 p-4 font-['Roboto_Slab']"><header className="text-center mb-4">{libraryProfile?.logo_url && <img src={libraryProfile.logo_url} alt="Logo" className="h-20 w-20 mx-auto object-contain mb-2" />}<h1 className="text-2xl md:text-3xl font-bold uppercase tracking-wider">{libraryProfile?.library_name || 'Library Name'}</h1><p className="text-xs">{libraryProfile?.library_address || 'Address not set'}</p><div className="text-xs flex justify-center gap-4"><span>Ph: {libraryProfile?.phone_numbers || 'Not set'}</span>{libraryProfile?.reg_no && <span>Reg.No: {libraryProfile.reg_no}</span>}</div></header><div className="flex justify-between items-start text-sm border-t-2 border-b-2 border-black py-1 my-2"><div><span className="font-bold">Receipt No:</span> {receiptNo}</div><div><span className="font-bold">Date:</span> {paymentDate.toLocaleDateString('en-GB')}</div></div><div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mb-2"><div className="col-span-2"><span className="font-bold pr-2">Name Of Student:</span>{student.name}</div><div className="col-span-2"><span className="font-bold pr-2">Father's/Husband Name:</span>{student.father_name}</div><div><span className="font-bold pr-2">Reg. No:</span>{student.student_id}</div><div><span className="font-bold pr-2">Mob:</span>{student.mobile}</div><div className="col-span-2"><span className="font-bold pr-2">Fee for Period:</span>{fromDate.toLocaleDateString('en-GB')} To {toDate.toLocaleDateString('en-GB')}</div><div><span className="font-bold pr-2">Shift:</span>{student.admission_type === 'Full-time' ? 'Full Day' : student.shift}</div></div><div className="border-t-2 border-black pt-2"><div className="flex justify-between items-center text-sm"><p className="font-bold">The Sum of Rupee:</p><div className="border-2 border-black px-4 py-1 font-bold">₹ {payment.amount.toFixed(2)} /-</div></div><p className="text-sm capitalize font-semibold mt-1">{numberToWords(payment.amount)}</p></div><div className="flex justify-between items-end mt-10"><p className="text-xs text-gray-700">Note: Fee is not Refundable/Transferable.</p><div className="text-center"><div className="border-b-2 border-gray-600 border-dotted w-40 mb-1"></div><p className="text-xs font-bold">Authorized Signature</p></div></div></div></div>);
 });
-const PrintReceiptModal = ({ student, libraryProfile }) => {
-    const receiptRef = useRef(); const lastPayment = student.payment_history?.length > 0 ? student.payment_history[student.payment_history.length - 1] : null; if (!lastPayment) { return (<div><h3 className="text-2xl font-semibold mb-4 text-gray-800">Print Fee Receipt</h3><div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert"><p className="font-bold">No Payment History</p><p>This student has not made any payments yet. No receipt can be generated.</p></div></div>); } const handlePrint = () => { const printContents = receiptRef.current.innerHTML; const originalContents = document.body.innerHTML; document.body.innerHTML = printContents; window.print(); document.body.innerHTML = originalContents; window.location.reload(); }; return (<div><h3 className="text-2xl font-semibold mb-4 text-gray-800">Print Fee Receipt</h3><FeeReceipt ref={receiptRef} student={student} libraryProfile={libraryProfile} payment={lastPayment} /><Button onClick={handlePrint} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700 no-print"><Printer size={20} className="mr-2" /> Print Receipt</Button></div>);
-};
-const DashboardCharts = ({ students }) => {
+
+const PrintReceiptModal = React.memo(({ student, libraryProfile }) => {
+    const receiptRef = useRef(); const lastPayment = student.payment_history?.length > 0 ? student.payment_history[student.payment_history.length - 1] : null; if (!lastPayment) { return (<div><h3 className="text-xl md:text-2xl font-semibold mb-4 text-gray-800">Print Fee Receipt</h3><div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert"><p className="font-bold">No Payment History</p><p>This student has not made any payments yet. No receipt can be generated.</p></div></div>); } const handlePrint = () => { const printContents = receiptRef.current.innerHTML; const originalContents = document.body.innerHTML; document.body.innerHTML = printContents; window.print(); document.body.innerHTML = originalContents; window.location.reload(); }; return (<div><h3 className="text-xl md:text-2xl font-semibold mb-4 text-gray-800">Print Fee Receipt</h3><FeeReceipt ref={receiptRef} student={student} libraryProfile={libraryProfile} payment={lastPayment} /><Button onClick={handlePrint} className="w-full mt-6 bg-indigo-600 text-white p-3 hover:bg-indigo-700 no-print"><Printer size={20} className="mr-2" /> Print Receipt</Button></div>);
+});
+
+const DashboardCharts = React.memo(({ students }) => {
     const monthlyAdmissionsData = useMemo(() => { const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]; const admissions = {}; for (let i = 5; i >= 0; i--) { const d = new Date(); d.setMonth(d.getMonth() - i); const monthKey = `${monthNames[d.getMonth()]} ${d.getFullYear()}`; admissions[monthKey] = 0; } students.forEach(student => { const admissionDate = new Date(student.admission_date); const monthKey = `${monthNames[admissionDate.getMonth()]} ${admissionDate.getFullYear()}`; if (admissions.hasOwnProperty(monthKey)) { admissions[monthKey]++; } }); return Object.keys(admissions).map(key => ({ month: key, Admissions: admissions[key] })); }, [students]); const feeStatusData = useMemo(() => { let paid = 0, due = 0; students.forEach(s => { if (isFeeDue(s.next_due_date)) { due++; } else { paid++; } }); return [{ name: 'Paid', value: paid }, { name: 'Due', value: due }]; }, [students]); const COLORS = ['#10B981', '#EF4444'];
     return (<div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6"><div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Monthly Admissions</h4><ResponsiveContainer width="100%" height={300}><BarChart data={monthlyAdmissionsData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" /><YAxis /><Tooltip /><Legend /><Bar dataKey="Admissions" fill="#8884d8" /></BarChart></ResponsiveContainer></div><div className="bg-white p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Fee Status Overview</h4><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={feeStatusData} cx="50%" cy="50%" labelLine={false} outerRadius={80} fill="#8884d8" dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>{feeStatusData.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div></div>);
-};
-const ReportsView = ({ students }) => {
+});
+
+const ReportsView = React.memo(({ students }) => {
     const initialFilters = { dateRange: { from: '', to: '' }, feeStatus: 'all', shiftType: 'all', studentStatus: 'active', dateFilterType: 'admission_date', }; const [filters, setFilters] = useState(initialFilters); const handleFilterChange = (e) => { const { name, value } = e.target; setFilters(prev => ({ ...prev, [name]: value })); }; const handleDateChange = (e) => { const { name, value } = e.target; setFilters(prev => ({ ...prev, dateRange: { ...prev.dateRange, [name]: value } })); }; const resetFilters = () => { setFilters(initialFilters); };
     const filteredStudents = useMemo(() => { return students.filter(s => { if (filters.studentStatus !== 'all' && s.status !== filters.studentStatus) return false; const due = isFeeDue(s.next_due_date); if (filters.feeStatus === 'due' && !due) return false; if (filters.feeStatus === 'paid' && due) return false; if (filters.shiftType !== 'all' && s.admission_type !== filters.shiftType) return false; const fromDate = filters.dateRange.from ? new Date(filters.dateRange.from) : null; const toDate = filters.dateRange.to ? new Date(filters.dateRange.to) : null; if (fromDate || toDate) { const studentDate = new Date(s[filters.dateFilterType]); if (fromDate && studentDate < fromDate) return false; if (toDate) { const endOfDay = new Date(toDate); endOfDay.setHours(23, 59, 59, 999); if (studentDate > endOfDay) return false; } } return true; }); }, [students, filters]);
     const downloadCSV = () => { const headers = ["Reg. No.", "Student Name", "Father's Name", "Mobile No.", "Seat No.", "Admission Type", "Shift", "Admission Date", "Next Due Date", "Fee Amount", "Fee Status", "Student Status"]; const rows = filteredStudents.map(s => { const due = isFeeDue(s.next_due_date); const feeStatus = s.status === 'departed' ? 'N/A' : (due ? 'Due' : 'Paid'); const escape = (str) => `"${String(str || '').replace(/"/g, '""')}"`; return [escape(s.student_id), escape(s.name), escape(s.father_name), escape(s.mobile), escape(s.seat_number), escape(s.admission_type), escape(s.shift || 'N/A'), escape(new Date(s.admission_date).toLocaleDateString('en-GB')), escape(new Date(s.next_due_date).toLocaleDateString('en-GB')), escape(s.fee_amount), escape(feeStatus), escape(s.status.charAt(0).toUpperCase() + s.status.slice(1))].join(','); }); const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n'); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); const todayStr = new Date().toISOString().split('T')[0]; link.setAttribute("download", `library_report_${todayStr}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
-    return (<div className="space-y-6"><div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6"><h3 className="text-2xl font-semibold text-gray-800">Student Reports & Filtering</h3><div className="flex items-center gap-2 w-full md:w-auto"><Button onClick={resetFilters} className="bg-gray-200 text-gray-700 hover:bg-gray-300 w-1/2 md:w-auto"><FilterX size={16} className="mr-2" /> Reset</Button><Button onClick={downloadCSV} className="bg-indigo-600 text-white hover:bg-indigo-700 w-1/2 md:w-auto"><Download size={16} className="mr-2" /> Download CSV</Button></div></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div className="p-4 border rounded-lg bg-gray-50 md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-2">Filter by Date Range</label><div className="flex flex-col sm:flex-row gap-2"><select name="dateFilterType" value={filters.dateFilterType} onChange={handleFilterChange} className="p-2 border border-gray-300 rounded-lg bg-white w-full sm:w-1/3"><option value="admission_date">Admission Date</option><option value="next_due_date">Next Due Date</option></select><input type="date" name="from" value={filters.dateRange.from} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg w-full sm:w-1/3" /><input type="date" name="to" value={filters.dateRange.to} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg w-full sm:w-1/3" /></div></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Fee Status</label><select name="feeStatus" value={filters.feeStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Fee Status</option><option value="paid">Paid</option><option value="due">Due</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Admission Type</label><select name="shiftType" value={filters.shiftType} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Types</option><option value="Full-time">Full-time</option><option value="Half-time">Half-time</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Student Status</label><select name="studentStatus" value={filters.studentStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="active">Active</option><option value="departed">Departed</option><option value="all">All Students</option></select></div></div></div><div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Filtered Results <span className="text-indigo-600 font-bold">({filteredStudents.length} students found)</span></h4><div className="overflow-auto max-h-[60vh] styled-scrollbar"><table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-gray-100 text-gray-600 uppercase sticky top-0"><tr><th className="p-3">Reg. No</th><th className="p-3">Name</th><th className="p-3 hidden md:table-cell">Father's Name</th><th className="p-3 hidden sm:table-cell">Mobile</th><th className="p-3">Seat</th><th className="p-3 hidden lg:table-cell">Shift</th><th className="p-3 hidden lg:table-cell">Admission Date</th><th className="p-3 hidden sm:table-cell">Next Due Date</th><th className="p-3">Fee Status</th></tr></thead><tbody>{filteredStudents.length > 0 ? filteredStudents.map(s => { const due = isFeeDue(s.next_due_date); const isDeparted = s.status === 'departed'; return (<tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{s.student_id}</td><td className="p-3 font-medium text-gray-800">{s.name}</td><td className="p-3 hidden md:table-cell">{s.father_name}</td><td className="p-3 hidden sm:table-cell">{s.mobile}</td><td className="p-3">{s.seat_number}</td><td className="p-3 hidden lg:table-cell">{s.admission_type === 'Full-time' ? 'Full Day' : s.shift}</td><td className="p-3 hidden lg:table-cell">{new Date(s.admission_date).toLocaleDateString()}</td><td className="p-3 hidden sm:table-cell">{new Date(s.next_due_date).toLocaleDateString()}</td><td className="p-3"><span className={`px-3 py-1 rounded-full font-semibold text-xs ${isDeparted ? 'bg-gray-200 text-gray-800' : due ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{isDeparted ? 'Departed' : (due ? 'Due' : 'Paid')}</span></td></tr>) }) : (<tr><td colSpan="9" className="text-center p-8 text-gray-500">No students match the current filters. <br /> Try adjusting your search criteria.</td></tr>)}</tbody></table></div></div></div>);
-};
-const StudentProfileDetailModal = ({ student }) => {
+    return (<div className="space-y-6"><div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6"><h3 className="text-xl md:text-2xl font-semibold text-gray-800">Student Reports & Filtering</h3><div className="flex items-center gap-2 w-full md:w-auto"><Button onClick={resetFilters} className="bg-gray-200 text-gray-700 hover:bg-gray-300 w-1/2 md:w-auto"><FilterX size={16} className="mr-2" /> Reset</Button><Button onClick={downloadCSV} className="bg-indigo-600 text-white hover:bg-indigo-700 w-1/2 md:w-auto"><Download size={16} className="mr-2" /> Download CSV</Button></div></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div className="p-4 border rounded-lg bg-gray-50 md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-2">Filter by Date Range</label><div className="flex flex-col sm:flex-row gap-2"><select name="dateFilterType" value={filters.dateFilterType} onChange={handleFilterChange} className="p-2 border border-gray-300 rounded-lg bg-white w-full sm:w-1/3"><option value="admission_date">Admission Date</option><option value="next_due_date">Next Due Date</option></select><input type="date" name="from" value={filters.dateRange.from} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg w-full sm:w-1/3" /><input type="date" name="to" value={filters.dateRange.to} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg w-full sm:w-1/3" /></div></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Fee Status</label><select name="feeStatus" value={filters.feeStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Fee Status</option><option value="paid">Paid</option><option value="due">Due</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Admission Type</label><select name="shiftType" value={filters.shiftType} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="all">All Types</option><option value="Full-time">Full-time</option><option value="Half-time">Half-time</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Student Status</label><select name="studentStatus" value={filters.studentStatus} onChange={handleFilterChange} className="w-full p-2 border border-gray-300 rounded-lg bg-white"><option value="active">Active</option><option value="departed">Departed</option><option value="all">All Students</option></select></div></div></div><div className="bg-white p-4 md:p-6 rounded-lg shadow-md"><h4 className="text-lg font-semibold text-gray-700 mb-4">Filtered Results <span className="text-indigo-600 font-bold">({filteredStudents.length} students found)</span></h4><div className="overflow-auto max-h-[60vh] styled-scrollbar"><table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-gray-100 text-gray-600 uppercase sticky top-0"><tr><th className="p-3">Reg. No</th><th className="p-3">Name</th><th className="p-3 hidden md:table-cell">Father's Name</th><th className="p-3 hidden sm:table-cell">Mobile</th><th className="p-3">Seat</th><th className="p-3 hidden lg:table-cell">Shift</th><th className="p-3 hidden lg:table-cell">Admission Date</th><th className="p-3 hidden sm:table-cell">Next Due Date</th><th className="p-3">Fee Status</th></tr></thead><tbody>{filteredStudents.length > 0 ? filteredStudents.map(s => { const due = isFeeDue(s.next_due_date); const isDeparted = s.status === 'departed'; return (<tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{s.student_id}</td><td className="p-3 font-medium text-gray-800">{s.name}</td><td className="p-3 hidden md:table-cell">{s.father_name}</td><td className="p-3 hidden sm:table-cell">{s.mobile}</td><td className="p-3">{s.seat_number}</td><td className="p-3 hidden lg:table-cell">{s.admission_type === 'Full-time' ? 'Full Day' : s.shift}</td><td className="p-3 hidden lg:table-cell">{new Date(s.admission_date).toLocaleDateString()}</td><td className="p-3 hidden sm:table-cell">{new Date(s.next_due_date).toLocaleDateString()}</td><td className="p-3"><span className={`px-3 py-1 rounded-full font-semibold text-xs ${isDeparted ? 'bg-gray-200 text-gray-800' : due ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{isDeparted ? 'Departed' : (due ? 'Due' : 'Paid')}</span></td></tr>) }) : (<tr><td colSpan="9" className="text-center p-8 text-gray-500">No students match the current filters. <br /> Try adjusting your search criteria.</td></tr>)}</tbody></table></div></div></div>);
+});
+
+const StudentProfileDetailModal = React.memo(({ student }) => {
     const due = isFeeDue(student.next_due_date); const monthsPaidInAdvance = useMemo(() => { const today = new Date(); const nextDueDate = new Date(student.next_due_date); if (nextDueDate <= today) return 0; let months = (nextDueDate.getFullYear() - today.getFullYear()) * 12; months -= today.getMonth(); months += nextDueDate.getMonth(); return months <= 0 ? 0 : months; }, [student.next_due_date]);
-    return (<div className="p-2"><div className="flex flex-col md:flex-row items-center gap-6 border-b pb-6 mb-6"><img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-32 h-32 rounded-full object-cover border-4 border-indigo-200 shadow-lg" /><div className="flex-1 text-center md:text-left"><h2 className="text-3xl font-bold text-gray-800">{student.title} {student.name}</h2><p className="text-indigo-600 font-mono">Reg. No: {student.student_id}</p><div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-4 mt-2 text-gray-600"><span className="flex items-center gap-1"><Phone size={16} /> {student.mobile}</span><span className="flex items-center gap-1"><Armchair size={16} /> Seat {student.seat_number}</span></div></div><div className={`p-4 rounded-lg text-center ${due ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}><p className="font-bold text-lg">{due ? 'Fee Due' : 'Fee Paid'}</p><p className="text-sm">Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p>{monthsPaidInAdvance > 0 && <p className="text-xs font-semibold mt-1">({monthsPaidInAdvance} Month(s) Advance)</p>}</div></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-6"><div className="bg-gray-50 p-4 rounded-lg"><h4 className="font-bold text-gray-600 mb-2">Personal Details</h4><p><span className="font-semibold">Father's Name:</span> {student.father_name}</p><p><span className="font-semibold">Admission Date:</span> {new Date(student.admission_date).toLocaleDateString()}</p></div><div className="bg-gray-50 p-4 rounded-lg"><h4 className="font-bold text-gray-600 mb-2">Subscription Details</h4><p><span className="font-semibold">Admission Type:</span> {student.admission_type}</p><p><span className="font-semibold">Shift:</span> {student.admission_type === 'Full-time' ? 'Full Day' : student.shift}</p><p><span className="font-semibold">Fee Amount:</span> ₹{student.fee_amount}</p></div></div><div><h4 className="font-bold text-gray-600 mb-2">Payment History</h4><div className="max-h-48 overflow-y-auto border rounded-lg styled-scrollbar"><table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-2">Date</th><th className="p-2">Amount</th><th className="p-2">Method</th></tr></thead><tbody>{student.payment_history && student.payment_history.length > 0 ? (student.payment_history.map((p, i) => (<tr key={i} className="border-b"><td className="p-2">{new Date(p.date).toLocaleDateString()}</td><td className="p-2 font-semibold">₹{p.amount}</td><td className="p-2"><span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{p.method}</span></td></tr>))) : (<tr><td colSpan="3" className="text-center p-4 text-gray-500">No payment history found.</td></tr>)}</tbody></table></div></div></div>);
-};
-const SeatOccupantsDetailModal = ({ item, onViewFullProfile }) => {
+    return (<div className="p-2"><div className="flex flex-col md:flex-row items-center gap-6 border-b pb-6 mb-6"><img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-32 h-32 rounded-full object-cover border-4 border-indigo-200 shadow-lg" /><div className="flex-1 text-center md:text-left"><h2 className="text-2xl md:text-3xl font-bold text-gray-800">{student.title} {student.name}</h2><p className="text-indigo-600 font-mono">Reg. No: {student.student_id}</p><div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-4 mt-2 text-gray-600"><span className="flex items-center gap-1"><Phone size={16} /> {student.mobile}</span><span className="flex items-center gap-1"><Armchair size={16} /> Seat {student.seat_number}</span></div></div><div className={`p-4 rounded-lg text-center ${due ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}><p className="font-bold text-lg">{due ? 'Fee Due' : 'Fee Paid'}</p><p className="text-sm">Next Due: {new Date(student.next_due_date).toLocaleDateString()}</p>{monthsPaidInAdvance > 0 && <p className="text-xs font-semibold mt-1">({monthsPaidInAdvance} Month(s) Advance)</p>}</div></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-6"><div className="bg-gray-50 p-4 rounded-lg"><h4 className="font-bold text-gray-600 mb-2">Personal Details</h4><p><span className="font-semibold">Father's Name:</span> {student.father_name}</p><p><span className="font-semibold">Admission Date:</span> {new Date(student.admission_date).toLocaleDateString()}</p></div><div className="bg-gray-50 p-4 rounded-lg"><h4 className="font-bold text-gray-600 mb-2">Subscription Details</h4><p><span className="font-semibold">Admission Type:</span> {student.admission_type}</p><p><span className="font-semibold">Shift:</span> {student.admission_type === 'Full-time' ? 'Full Day' : student.shift}</p><p><span className="font-semibold">Fee Amount:</span> ₹{student.fee_amount}</p></div></div><div><h4 className="font-bold text-gray-600 mb-2">Payment History</h4><div className="max-h-48 overflow-y-auto border rounded-lg styled-scrollbar"><table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-2">Date</th><th className="p-2">Amount</th><th className="p-2">Method</th></tr></thead><tbody>{student.payment_history && student.payment_history.length > 0 ? (student.payment_history.map((p, i) => (<tr key={i} className="border-b"><td className="p-2">{new Date(p.date).toLocaleDateString()}</td><td className="p-2 font-semibold">₹{p.amount}</td><td className="p-2"><span className="text-xs bg-gray-200 px-2 py-1 rounded-full">{p.method}</span></td></tr>))) : (<tr><td colSpan="3" className="text-center p-4 text-gray-500">No payment history found.</td></tr>)}</tbody></table></div></div></div>);
+});
+
+const SeatOccupantsDetailModal = React.memo(({ item, onViewFullProfile }) => {
     const { occupants, seatNumber } = item;
     return (
-        <div><h3 className="text-2xl font-semibold mb-6 text-gray-800">Occupants of Seat #{seatNumber}</h3>{occupants.length > 0 ? (<div className="space-y-4">{occupants.map(student => (<div key={student.id} className="p-4 border rounded-lg flex flex-col sm:flex-row items-center gap-4 bg-gray-50"><img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-24 h-24 rounded-full object-cover shadow-md" /><div className="flex-1 text-center sm:text-left"><p className="font-bold text-xl text-gray-800">{student.name}</p><p className="text-sm font-mono text-indigo-600">Reg: {student.student_id}</p><div className={`inline-flex items-center gap-2 px-3 py-1 mt-2 rounded-full text-sm font-semibold ${student.admission_type === 'Full-time' ? 'bg-indigo-100 text-indigo-800' : student.shift === 'Morning' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'}`}>{student.admission_type === 'Full-time' ? <BookOpen size={16} /> : student.shift === 'Morning' ? <Sun size={16} /> : <Moon size={16} />}{student.admission_type === 'Full-time' ? 'Full-time' : `${student.shift} Shift`}</div></div><button onClick={() => onViewFullProfile(student)} className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-200 transition-colors text-sm font-semibold"><Eye size={16} /> View Full Profile</button></div>))}</div>) : (<div className="text-center p-8 bg-green-50 text-green-700 rounded-lg">This seat is currently available.</div>)}</div>
+        <div><h3 className="text-xl md:text-2xl font-semibold mb-6 text-gray-800">Occupants of Seat #{seatNumber}</h3>{occupants.length > 0 ? (<div className="space-y-4">{occupants.map(student => (<div key={student.id} className="p-4 border rounded-lg flex flex-col sm:flex-row items-center gap-4 bg-gray-50"><img src={student.photo_url || 'https://placehold.co/128x128/e2e8f0/64748b?text=Photo'} alt={student.name} className="w-24 h-24 rounded-full object-cover shadow-md" /><div className="flex-1 text-center sm:text-left"><p className="font-bold text-xl text-gray-800">{student.name}</p><p className="text-sm font-mono text-indigo-600">Reg: {student.student_id}</p><div className={`inline-flex items-center gap-2 px-3 py-1 mt-2 rounded-full text-sm font-semibold ${student.admission_type === 'Full-time' ? 'bg-indigo-100 text-indigo-800' : student.shift === 'Morning' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'}`}>{student.admission_type === 'Full-time' ? <BookOpen size={16} /> : student.shift === 'Morning' ? <Sun size={16} /> : <Moon size={16} />}{student.admission_type === 'Full-time' ? 'Full-time' : `${student.shift} Shift`}</div></div><button onClick={() => onViewFullProfile(student)} className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-200 transition-colors text-sm font-semibold"><Eye size={16} /> View Full Profile</button></div>))}</div>) : (<div className="text-center p-8 bg-green-50 text-green-700 rounded-lg">This seat is currently available.</div>)}</div>
     );
-};
-const IncomePasswordModal = ({ onVerify, onClose, isSubmitting }) => {
+});
+
+const IncomePasswordModal = React.memo(({ onVerify, onClose, isSubmitting }) => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const handleSubmit = async (e) => { e.preventDefault(); setError(''); try { await onVerify(password); } catch (err) { setError(err.message); } };
     return (
-        <form onSubmit={handleSubmit}><h3 className="text-2xl font-semibold mb-2 text-gray-800">Enter Password</h3><p className="text-gray-600 mb-6">Please enter your account password to view the total income.</p><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Password" required /></div>{error && <p className="text-red-500 text-sm mt-2 text-center">{error}</p>}<div className="flex justify-end gap-4 mt-6"><button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-60">Cancel</button><Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700 text-white">{isSubmitting ? 'Verifying...' : 'Verify'}</Button></div></form>
+        <form onSubmit={handleSubmit}><h3 className="text-xl md:text-2xl font-semibold mb-2 text-gray-800">Enter Password</h3><p className="text-gray-600 mb-6">Please enter your account password to view the total income.</p><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Password" required /></div>{error && <p className="text-red-500 text-sm mt-2 text-center">{error}</p>}<div className="flex justify-end gap-4 mt-6"><button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-60">Cancel</button><Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700 text-white">{isSubmitting ? 'Verifying...' : 'Verify'}</Button></div></form>
     )
-};
+});
 
 export default App;
